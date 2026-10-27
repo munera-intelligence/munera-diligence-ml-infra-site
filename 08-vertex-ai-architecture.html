@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Munera → Vertex AI: architecture and data requirements</title>
+<style>
+:root{color-scheme:light;--fg:#172c40;--muted:#526578;--border:#d2dce5;--surface:#f4f7fa;--accent:#235eaa}*{box-sizing:border-box}body{margin:0;color:var(--fg);background:#fff;font:16px/1.55 system-ui,sans-serif}main{max-width:1500px;margin:auto;padding:28px}h1{font-size:34px;line-height:1.15;letter-spacing:-.025em;margin:8px 0 16px}h2{font-size:24px;margin:34px 0 12px}p{max-width:1120px}a{color:var(--accent);text-underline-offset:3px}.meta,figcaption{font-size:13px;color:var(--muted)}.lead{font-size:19px}.note{border-left:4px solid var(--accent);background:var(--surface);padding:14px 18px;max-width:1180px}.note strong{color:var(--fg)}figure{margin:24px 0}.diagram{display:block;width:100%;height:auto;border:1px solid var(--border)}figcaption{margin-top:8px}.table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:6px}table{border-collapse:collapse;width:100%;font-size:15px;line-height:1.5}th,td{padding:13px 16px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}th{background:var(--surface)}tr:last-child td{border-bottom:0}td:first-child{width:24%;font-weight:650}code{font-size:.9em;overflow-wrap:anywhere}ul{padding-left:23px}li{margin:7px 0}.links{display:flex;gap:20px;flex-wrap:wrap}footer{margin-top:30px;padding-top:15px;border-top:1px solid var(--border);font-size:13px;color:var(--muted)}@media(max-width:700px){main{padding:18px}h1{font-size:28px}table{min-width:680px}.lead{font-size:17px}}@media print{main{padding:0}h1{font-size:24pt}h2{break-after:avoid}tr{break-inside:avoid}.table-wrap{overflow:visible}table{min-width:0;font-size:10pt}.diagram{max-height:90vh;object-fit:contain}}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:24px 0;border-bottom:2px solid var(--border)}.tabs a{padding:12px 18px;text-decoration:none;font-weight:700;border:1px solid var(--border);border-bottom:0;border-radius:8px 8px 0 0}.tabs a[aria-selected="true"]{background:var(--accent);color:white}.tabs a:focus-visible,a:focus-visible,[data-panel]:focus-visible{outline:3px solid var(--accent);outline-offset:4px}[hidden]{display:none!important}.summary{display:flex;gap:16px;flex-wrap:wrap;margin:20px 0}.summary p{flex:1;min-width:200px;margin:0;padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:8px}.summary strong{display:block;font-size:26px}.data-table{min-width:1050px}.data-table td:first-child{width:23%}.data-table th,.data-table td{padding:11px 13px}.count{white-space:nowrap;font-variant-numeric:tabular-nums}.label{font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.05em}h3{margin-top:28px}section{scroll-margin-top:18px}.checklist li{margin-bottom:14px}@media print{.tabs{display:none}[data-panel][hidden]{display:block!important}[data-panel]{break-before:page}.data-table{min-width:0;font-size:8pt}.data-table th,.data-table td{padding:6px}}
+</style>
+</head>
+<body><main>
+<p class="meta">Proposed architecture · 27 October 2026 · Based on the Munera HTML requirements and Google Vertex AI documentation</p>
+<p><a href="index.html">← Research library</a></p>
+<h1>Munera → Vertex AI<br>Architecture &amp; data requirements</h1>
+<nav class="tabs" aria-label="Architecture and data requirements"><a id="tab-architecture" href="#architecture">Architecture</a><a id="tab-data" href="#data">Data requirements</a></nav>
+<section id="architecture" data-panel aria-labelledby="tab-architecture" tabindex="0">
+<p class="lead"><strong>Yes: Vertex AI supplies the integrated ML lifecycle tools.</strong> We use them to replace the lab's ML orchestration, experiment tracking, model registry, training workers and serving infrastructure. We keep our model code, evaluation rules, human approval and Temporal application workflows.</p>
+<div class="links"><a href="diagrams/09-vertex-ai-key-modules.svg">Open full-size diagram</a><a href="https://github.com/munera-intelligence/munera-diligence-ml-infra/blob/main/diagrams/09-vertex-ai-key-modules.d2" title="Repository access required">Editable D2 source</a><a href="#mapping">HTML → Vertex mapping</a><a href="#network">Network paths</a></div>
+<figure><img class="diagram" src="diagrams/09-vertex-ai-key-modules.svg" alt="D2 architecture: controlled import outside a VPC Service Controls perimeter; regional artifact stores inside it; Munera customer VPC on the left and Google-managed Vertex AI on the right. Private Google API access points right, PSC interface egress points left, and prediction and vector-search PSC connections point right. Vertex Pipelines launches Custom Training, which logs to Experiments and passes evaluated, human-approved models to Model Registry and private Prediction Endpoints. Temporal stays in Munera's application."><figcaption>Rendered from D2. Amber = resource/API protection perimeter. Green = customer VPC and private connection points. Blue = Google-managed Vertex services, not machines deployed inside our VPC. One environment shown; repeat with separate development, staging and production grants/policies. Arrows show request initiation, not one-way response traffic.</figcaption></figure>
+
+<section id="mapping"><h2>1. Map our HTML architecture to the Vertex toolchain</h2>
+<div class="table-wrap"><table><thead><tr><th>In our existing HTML</th><th>What we use on Google Cloud</th><th>What changes / what stays ours</th></tr></thead><tbody>
+<tr><td>Airflow: ML experiment and training DAGs</td><td><a href="https://docs.cloud.google.com/vertex-ai/docs/pipelines/introduction"><strong>Vertex AI Pipelines</strong></a></td><td>Our versioned pipeline prepares and validates data, launches training, evaluates the result and coordinates release steps. Replace Airflow for these ML DAGs; do not also run Composer/Airflow for the same pipeline.</td></tr>
+<tr><td>Shared GPU training workers</td><td><a href="https://docs.cloud.google.com/vertex-ai/docs/training/configure-compute"><strong>Custom Training / Custom Jobs</strong></a></td><td>Run our pinned PyTorch, Paddle, FlagEmbedding or PEFT containers on qualified GPU shapes. Vertex provisions execution; it does not supply one universal trainer for every model. Two-/four-job concurrency becomes separate job allocations and quotas.</td></tr>
+<tr><td>MLflow: runs, parameters, metrics and provenance</td><td><a href="https://docs.cloud.google.com/vertex-ai/docs/experiments/intro-vertex-ai-experiments"><strong>Experiments + ML Metadata</strong></a></td><td>Record dataset/base-model revisions, recipe, metrics and produced artifacts. Compare candidates. TensorBoard is optional for training curves. Dataset bytes remain in Cloud Storage.</td></tr>
+<tr><td>MLflow: approved model versions</td><td><a href="https://docs.cloud.google.com/vertex-ai/docs/model-registry/versioning"><strong>Model Registry</strong></a></td><td>Register the approved model, adapter/base relationship, processor and serving container. The evaluation and human-approval gate is <strong>our release logic</strong>, not an automatic Vertex decision. Registration is not deployment.</td></tr>
+<tr><td>vLLM / classifier / OCR / retrieval model servers</td><td><a href="https://docs.cloud.google.com/vertex-ai/docs/predictions/use-custom-container"><strong>Prediction Endpoints with custom containers</strong></a></td><td>Deploy the selected runtime to dedicated private endpoints. Configure health/prediction routes, GPU/CPU capacity and rollback. The application calls the approved release; no public model endpoint is needed.</td></tr>
+<tr><td>Qdrant: retrieval index</td><td><a href="https://docs.cloud.google.com/vertex-ai/docs/vector-search/setup/setup"><strong>Vector Search</strong></a></td><td>Use BGE-M3 dense vectors, a private IndexEndpoint and tenant filters. Offline Custom Jobs encode passages; a pipeline builds/updates the index. Promote encoder + index together. This is a migration requiring recall/filter parity, not a Qdrant-compatible API. Multi-vector late interaction needs separate qualification.</td></tr>
+<tr><td>Git / DVC / artifact storage / OCI registry</td><td><strong>Keep Git + DVC; use Cloud Storage + Artifact Registry</strong></td><td>Git stores recipes/configuration; DVC identifies datasets; GCS stores documents, weights, adapters and reports; Artifact Registry stores pinned containers. These are supporting services, not Model Registry substitutes.</td></tr>
+<tr><td>Temporal / application SQL / deterministic reconcilers</td><td><strong>Keep Temporal and CPU application workers; Cloud SQL</strong></td><td>GKE runs long-lived Temporal/application workers; the Cloud Run API can reach them through its configured VPC path. SQL persists application and workflow state. The 22 deterministic reconcilers remain CPU code. Vertex Pipelines does not replace Temporal.</td></tr>
+<tr><td>Prometheus / OTel / logs / audit / secrets / recovery</td><td><strong>Cloud Monitoring, Logging, Trace; IAM, Secret Manager, KMS; backup storage</strong></td><td>Retain telemetry and immutable audit responsibilities. Use managed Prometheus where needed. Explicit retention, independent Canadian recovery, access tests and restore proof remain required.</td></tr>
+</tbody></table></div></section>
+
+<section id="network"><h2>2. Three different private network paths—not one “Vertex VPC”</h2>
+<div class="table-wrap"><table><thead><tr><th>Path in the diagram</th><th>Direction and mechanism</th><th>Why we need it</th></tr></thead><tbody>
+<tr><td>A · Control / Google API access</td><td>Munera VPC → <strong>PSC endpoint for Google APIs</strong>, restricted API bundle and private DNS.</td><td>Submit/manage pipeline jobs and access supported Google APIs without ordinary public internet routing. IAM and VPC-SC still authorize the caller. The same pattern applies to registry/control-plane APIs; the diagram shows Pipelines as the example.</td></tr>
+<tr><td>B · Training private egress</td><td>Google-managed training/pipeline execution → <strong>PSC interface</strong> → network attachment in Munera's VPC.</td><td>Only when a job needs an approved private destination. It is the opposite direction from a prediction endpoint. Google API traffic from managed training is normally resolved producer-side, so do not assume all GCS/Artifact Registry calls traverse our VPC.</td></tr>
+<tr><td>C · Production inference / retrieval</td><td>Munera workers → <strong>separate PSC consumer endpoints</strong> → prediction and Vector Search service attachments.</td><td>Private inference and private index queries. The application performs tenant authorization and coordinates retrieval/reranking. These connections do not give a prediction container arbitrary private egress to SQL or other services.</td></tr>
+</tbody></table></div>
+<div class="note"><strong>Critical:</strong> attaching a VPC or a PSC interface is not sufficient to block internet access. Google's training documentation says that without VPC Service Controls, managed training can use a Google-managed internet gateway that bypasses the consumer VPC's routes. Use the service perimeter <em>and</em> the private connectivity configuration; provide no unrestricted NAT/proxy path for execution, then test that prohibited egress actually fails.</div>
+<p><strong>The perimeter protects supported APIs/resources, not every packet or every runtime.</strong> Customer firewalls, IAM, workload identities and application ACLs remain separate controls. Run controlled imports in a separate trust boundary and promote approved artifacts through narrowly scoped ingress rules. Keep production data/secrets out of experimental identities. For development, staging and production, define distinct projects, principals and perimeter policies; do not put them in one permissive shared perimeter.</p>
+<p><strong>Canadian placement:</strong> propose Toronto for the new ML resources; Google's current matrix lists L4/H100 and the core ML services there. Existing Montréal application resources are not automatically moved. Confirm exact regional GPU shape/quota, supported serving purchase mode and cross-region PSC access before deployment. No overseas fallback is implied.</p>
+</section>
+
+<section><h2>3. Our models run inside that same lifecycle</h2>
+<ul>
+<li><strong>Classification:</strong> XLM-R / CamemBERTav2 → supervised Custom Job → classifier endpoint.</li>
+<li><strong>Document vision:</strong> LightOnOCR or PaddleOCR-VL → evaluate first, adapt if needed → OCR endpoint. TableFormer stays a separately qualified CPU component.</li>
+<li><strong>Retrieval:</strong> BGE-M3 → passage/query embeddings → Vector Search; LightOn PW → reranking endpoint. Reranking is not performed by the vector database.</li>
+<li><strong>Extraction:</strong> evaluate Mistral, Luciole, Qwen or Granite in the source's priority/role order; train and serve the selected candidate, not all four at once. The 80 GB H100 is not a fit guarantee for every Qwen dtype/context recipe.</li>
+</ul>
+<p><strong>Optional, not required initially:</strong> Workbench for notebooks, Vizier for bounded tuning searches, TensorBoard for curves, and Model Monitoring for supported production monitoring. Custom frozen evaluators still measure OCR, retrieval and extraction quality. Model Garden is discovery/deployment tooling, not proof that every exact checkpoint has a managed tuning recipe. Gemini, AutoML, Feature Store and RAG Engine are not prerequisites for this architecture.</p>
+</section>
+
+<section><h2>Documentation behind the network boundaries</h2>
+<ul>
+<li><a href="https://docs.cloud.google.com/vertex-ai/docs/general/netsec-overview">Vertex AI networking overview: Google API access, PSC endpoints, PSC interfaces and PSA</a></li>
+<li><a href="https://docs.cloud.google.com/vertex-ai/docs/general/vpc-service-controls">VPC Service Controls with Vertex AI</a></li>
+<li><a href="https://docs.cloud.google.com/vertex-ai/docs/training/psc-i-egress">Training PSC interfaces: producer-side API access and internet-egress behavior</a></li>
+<li><a href="https://docs.cloud.google.com/vertex-ai/docs/pipelines/configure-private-service-connect">Configure PSC interfaces for Pipelines</a></li>
+<li><a href="https://docs.cloud.google.com/vertex-ai/docs/predictions/private-service-connect">Dedicated private prediction endpoints: service attachments and limitations</a></li>
+<li><a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/vector-search/private-service-connect">Private Service Connect for Vector Search</a></li>
+<li><a href="https://docs.cloud.google.com/vertex-ai/docs/general/locations">Regional feature and accelerator availability</a></li>
+<li><a href="https://munera-intelligence.github.io/munera-diligence-ml-infra-site/06-shared-infrastructure.html">Our source: shared infrastructure</a> · <a href="https://munera-intelligence.github.io/munera-diligence-ml-infra-site/05-framework-and-experience.html">ML workflow and release requirements</a> · <a href="https://d2lang.com/">D2 diagram language</a></li>
+</ul>
+</section>
+</section>
+<section id="data" data-panel aria-labelledby="tab-data" tabindex="0">
+<p class="label">Acquisition plan · estimates, not measured minimums</p>
+<h2>Data requirements per model</h2>
+<p class="lead">Start with <strong>3,000 reviewed extraction documents</strong>; expand toward <strong>10,000</strong> only when the learning curve justifies it. Classification, OCR and retrieval use different annotation units and their own splits. A larger model does not automatically require proportionally more documents.</p>
+<div class="summary"><p><strong>3,000 documents</strong>Extraction pilot: 2,000 train / 500 development / 500 locked test.</p><p><strong>10,000 documents</strong>Expanded extraction: 7,000 train / 1,000 development / 2,000 locked test. Includes the pilot.</p><p><strong>One shared corpus</strong>Reuse approved source PDFs and page images across tasks; count task-specific labels separately.</p></div>
+<div class="note"><strong>How to read these numbers:</strong> all Munera quantities below are proposed acquisition targets, not a guarantee of accuracy or a claim that data has already been collected. Train learns weights; development selects prompts, preprocessing, checkpoints and thresholds; the locked test is reserved for release evaluation. Alternatives share the same split, not separate copies of the corpus.</div>
+<p class="links"><a href="#model-data">Per-model splits</a><a href="#document-qualification">Document qualification</a><a href="#process-validation">Process validation</a><a href="#data-budget">Storage &amp; effort</a><a href="#data-evidence">Sources &amp; limits</a></p>
+
+<section id="model-data"><h3>1. Per-model acquisition and split</h3>
+<p>Extraction arrows mean <strong>pilot → expanded programme</strong>. Other rows retain the source guides' base planning quantities. Do not sum documents + pages + queries + pairs: they measure different things.</p>
+<div class="table-wrap" role="region" aria-label="Per-model data requirements; horizontally scrollable" tabindex="0"><table class="data-table"><thead><tr><th scope="col">Model / component</th><th scope="col">Unit</th><th scope="col">Train</th><th scope="col">Development</th><th scope="col">Locked test</th><th scope="col">Required supervision / qualification</th></tr></thead><tbody>
+<tr><td><a href="https://huggingface.co/FacebookAI/xlm-roberta-large">XLM-R large</a></td><td>Documents</td><td class="count">11,000</td><td class="count">2,200</td><td class="count">4,400</td><td>Type label across 110 types; phase label where applicable. Total 17,600. Assess per-type recall, macro-F1, unknown classes and French/English slices. Forty test documents/type is screening, not rare-error certification. <a href="01-classification.html">Source plan</a>.</td></tr>
+<tr><td><a href="https://huggingface.co/almanach/camembertav2-base">CamemBERTav2 base</a></td><td>Same classification documents</td><td class="count">11,000</td><td class="count">2,200</td><td class="count">4,400</td><td>Alternative on the same 17,600-document split, not another acquisition budget. Qualify French coverage and any English/bilingual use separately. Eight phase labels do not multiply the document count.</td></tr>
+<tr><td><a href="https://huggingface.co/lightonai/LightOnOCR-2-1B">LightOnOCR-2-1B</a><br>Adapt <code>LightOnOCR-2-1B-base</code></td><td>Annotated pages</td><td class="count">12,000</td><td class="count">1,500</td><td class="count">1,500</td><td>Page image → reviewed text/markup, reading order and tables where required. Evaluate first; fine-tune only if needed. CER/WER, critical digits and table structure; qualify fine print at the selected rendering resolution. <a href="02-document-vision.html">Source plan</a>.</td></tr>
+<tr><td><a href="https://huggingface.co/PaddlePaddle/PaddleOCR-VL-1.6">PaddleOCR-VL-1.6</a></td><td>Same OCR pages</td><td class="count">12,000</td><td class="count">1,500</td><td class="count">1,500</td><td>Alternative using the same approved page split; convert labels for its ERNIEKit SFT route. This does not establish training support for the separate layout/ranking models.</td></tr>
+<tr><td>Docling / TableFormer</td><td>Table crops with structure labels</td><td>Not planned</td><td class="count">250</td><td class="count">500</td><td><strong>New evaluation allowance</strong>, not an upstream minimum. Annotate cells, row/column spans, headers and values on eligible pages from the matching OCR splits. Test TEDS/cell accuracy and CPU runtime. No TableFormer fine-tuning programme selected.</td></tr>
+<tr><td><a href="https://huggingface.co/BAAI/bge-m3">BGE-M3</a></td><td>Queries with relevance judgements</td><td class="count">4,000</td><td class="count">1,200</td><td class="count">1,200</td><td>Query + positive passage + reviewed hard negatives. Evaluate untuned first. Recall@k, nDCG and tenant-filter correctness against the intended search corpus. The 105,600 indexed passages are not 105,600 labelled queries. <a href="03-retrieval.html">Source plan</a>.</td></tr>
+<tr><td><a href="https://huggingface.co/lightonai/LightOn-rerank-PW-2B">LightOn-rerank-PW-2B</a></td><td>Query–passage pairs</td><td class="count">16,000</td><td class="count">4,800</td><td class="count">4,800</td><td>Derived allowance: one positive + three negatives per query from the BGE split; not independent questions. Yes/No relevance supervision, fixed templates, separately qualified image pairs. Evaluate the full retrieval/reranking pipeline at production candidate depth, not only four curated candidates.</td></tr>
+<tr><td><a href="https://huggingface.co/Qwen/Qwen3.5-27B">Qwen3.5-27B</a></td><td>Extraction documents</td><td class="count">2,000 → 7,000</td><td class="count">500 → 1,000</td><td class="count">500 → 2,000</td><td><strong>New proposal:</strong> first adapter-tuning candidate after baseline comparison. Reviewed schema-valid JSON + field evidence; text/images as deployed. Qualify exact processor, sequence/image limits, train/save/reload and serving compatibility.</td></tr>
+<tr><td><a href="https://huggingface.co/Qwen/Qwen3.5-122B-A10B">Qwen3.5-122B-A10B</a></td><td>Same extraction documents</td><td class="count">2,000 → 7,000</td><td class="count">500 → 1,000</td><td class="count">500 → 2,000</td><td>Compare untuned first; tune only for a demonstrated quality gap. 122B total / 10B active MoE. Same dataset, not 122/27 times more data. Two-H100 inference is not training-fit evidence; the older dense-32B memory calculation does not apply.</td></tr>
+<tr><td><a href="https://huggingface.co/Qwen/Qwen3-VL-32B-Instruct">Qwen3-VL-32B-Instruct</a></td><td>Same extraction documents</td><td class="count">2,000 → 7,000</td><td class="count">500 → 1,000</td><td class="count">500 → 2,000</td><td>Older dense-model sizing reference, not the new 122B MoE. If evaluated, use the same held-out cases and its own image processor/adapter recipe.</td></tr>
+<tr><td><a href="https://huggingface.co/mistralai/Mistral-Small-3.2-24B-Instruct-2506">Mistral-Small-3.2-24B-Instruct-2506</a></td><td>Same extraction documents</td><td class="count">2,000 → 7,000</td><td class="count">500 → 1,000</td><td class="count">500 → 2,000</td><td>Existing extraction candidate; text/image preparation is model-specific. Shared gold outputs permit a controlled comparison, not a separate 10,000-document collection.</td></tr>
+<tr><td><a href="https://huggingface.co/OpenLLM-France/Luciole-23B-Instruct-1.1">Luciole-23B-Instruct-1.1</a></td><td>Same extraction documents, text inputs</td><td class="count">2,000 → 7,000</td><td class="count">500 → 1,000</td><td class="count">500 → 2,000</td><td>French/text alternative. Use production-like OCR/text with page references; diagnose OCR loss separately. Do not claim image-native capability or identical inputs to a visual model.</td></tr>
+<tr><td><a href="https://huggingface.co/ibm-granite/granite-4.2-30b">Granite-4.2-30b</a></td><td>Same extraction documents, text inputs</td><td class="count">2,000 → 7,000</td><td class="count">500 → 1,000</td><td class="count">500 → 2,000</td><td>Text reasoning alternative. Preserve evidence and explicit output/thinking settings. Exact trainer support must be demonstrated before allocating a training run.</td></tr>
+</tbody></table></div>
+<p><strong>Coverage limit:</strong> the 3,000-document extraction pilot targets 3–5 priority families; the 10,000-document programme targets roughly 10–20, subject to schema/risk coverage. The classification taxonomy's 110 types are not automatically 110 extraction schemas. If all need distinct behaviour, a provisional 100–300 training documents/type already implies 11,000–33,000 training documents, before holdouts. This is a coverage sensitivity, not a guaranteed minimum.</p>
+<p><strong>Shared-source accounting:</strong> extraction documents may be selected from the classification corpus; OCR uses their pages and retrieval uses their passages. Preserve one global project/document-lineage split across model families. A document locked for end-to-end testing must not train an upstream OCR model, classifier, reranker or extraction adapter. Exact cross-task overlap is not yet measured.</p>
+</section>
+
+<section id="document-qualification"><h3>2. Qualifications for every accepted document</h3>
+<p>A PDF is eligible for training only after permission, lineage, input and label checks pass. A difficult or unreadable page may remain as a deliberately labelled abstention case; it must not be given an invented answer.</p>
+<ol class="checklist">
+<li><strong>Permission and provenance.</strong> Record source ID, checksum, project/tenant, issuer, version/date, permitted training/evaluation use, residency and retention. Keep annotation and model-assisted labelling inside the approved perimeter; no unapproved external API uploads.</li>
+<li><strong>Coverage labels.</strong> Record document type/schema, French/English/bilingual status, template/issuer, digital versus scanned origin, page count, scan quality, tables and rare conditions. Track missing fields, conflicting values, amendments and genuinely unanswerable cases. Do not substitute thousands of near-identical invoices for coverage.</li>
+<li><strong>Stable input preparation.</strong> Retain original PDFs and version rendering/OCR code, page order, crop transforms and resolution. Train on the input quality production will see. Keep manually corrected-text evaluations as a separate diagnostic, not the production score.</li>
+<li><strong>Reviewed labels.</strong> Store schema version, raw and normalized field values, units/currency, and field-level evidence (page + text span or bounding box). Define absent, illegible, conflicting and not-applicable outcomes. Preserve source inconsistencies; do not silently “fix” totals or dates in gold extraction labels.</li>
+<li><strong>Human qualification.</strong> Calibrate reviewers on a first 100-document batch; measure disagreements and adjudicate them. Independently second-review the locked test set and critical financial/legal fields. Proposed training QA: second-review at least a random 20% sample plus disputed/high-risk cases; expand review if disagreement is material. Model-generated labels are drafts, not ground truth.</li>
+<li><strong>Leakage control before augmentation.</strong> Deduplicate exact and near-duplicates. Group pages, chunks, revisions, translations and synthetic derivatives by original lineage; split by project/issuer/time as appropriate. Hold out unseen projects/templates where generalization is required. Never mine training negatives or synthetic prompts from the locked test.</li>
+<li><strong>Model-ready record.</strong> Include input text/image references, instruction/schema and reviewed target in the selected trainer's JSONL format. Log processor-expanded input length, target length, image tokens and truncation. Chunk with enough evidence; never require an answer whose source was cut away. Freeze tokenizer, chat template, preprocessing and dataset revision.</li>
+</ol>
+<p><strong>Acquisition allowance:</strong> at an assumed 80% acceptance rate, source 12,500 candidates to obtain 10,000 accepted extraction documents. This is not an observed rejection rate. Existing approved documents can satisfy that pool; it is not automatically new collection.</p>
+</section>
+
+<section id="process-validation"><h3>3. Extraction quality is separate from process validation</h3>
+<div class="note"><strong>Keep the 22 deterministic reconcilers in code.</strong> The model extracts evidence-backed facts; rules perform joins, dates, thresholds, presence checks and arithmetic. Temporal remains the application workflow engine. None of these rules requires an additional LLM training corpus.</div>
+<p><strong>Proposed rule-test allowance:</strong> 20–50 meaningful cases per reconciler = 440–1,100 cases. Include correct matches, true mismatches, values below/at/above boundaries, missing/conflicting evidence, wrong entity/currency/unit/version, duplicates and out-of-order documents. These are regression fixtures, not SFT examples; branch coverage and risk may require more.</p>
+<p>For cross-document processes, retain reviewed bundles and expected <strong>pass / fail / insufficient evidence</strong> outcomes. Test rules with gold facts first, then the complete pipeline from original documents. Reuse source files without leaking test bundles into training.</p>
+<div class="table-wrap" role="region" aria-label="Release qualification requirements" tabindex="0"><table><thead><tr><th scope="col">Gate</th><th scope="col">Evidence required before promotion</th></tr></thead><tbody>
+<tr><td>Extraction correctness</td><td>Exact/normalized critical amounts, dates and identifiers; field recall; invented-value rate; evidence-attribution accuracy; table row/cell and whole-document acceptance. Valid JSON alone is not correctness.</td></tr>
+<tr><td>Coverage and safe handling</td><td>Report by document family, language, issuer/template and scan quality. Measure abstention/human-review rate alongside accuracy so rejecting everything cannot appear successful.</td></tr>
+<tr><td>Process outcome</td><td>False approvals and missed discrepancies on reviewed document bundles; inspect every critical failure. Domain owners set numeric acceptance thresholds before model selection.</td></tr>
+<tr><td>Learning curve</td><td>Compare untuned candidates, then nested 500 / 1,000 / 2,000 / 4,000 / 7,000 training-document subsets on development data. Keep preprocessing and evaluation consistent; collect targeted failures instead of blindly increasing volume.</td></tr>
+<tr><td>Release and reproducibility</td><td>Locked test only for selected releases; record dataset/model/container revisions, recipe, metrics, peak memory, throughput, train/save/reload and private-endpoint smoke proof. Human approval precedes registration/deployment and rollback remains explicit.</td></tr>
+</tbody></table></div>
+<p><strong>Statistical limit:</strong> with zero failures in 300 independent, representative cases, the one-sided 95% upper failure bound is still about 1%; approximately 3,000 zero-failure cases are needed for a 0.1% bound. Calculation: <code>upper = 1 − 0.05^(1/n)</code>. Correlated fields/pages are not independent cases, and an overall sample does not certify rare document types. Repeatedly tuning against a test set invalidates its held-out role.</p>
+</section>
+
+<section id="data-budget"><h3>4. Storage, work and preparation budget</h3>
+<p>This is an <strong>illustrative extraction-corpus scenario</strong>, not a replacement for measured file statistics or the complete platform storage ledger.</p>
+<div class="table-wrap" role="region" aria-label="Extraction corpus storage assumptions" tabindex="0"><table><thead><tr><th scope="col">Asset</th><th scope="col">Explicit assumption</th><th scope="col">Decimal GB</th></tr></thead><tbody>
+<tr><td>Original documents</td><td>10,000 PDFs × 2 MB average</td><td>20</td></tr>
+<tr><td>One rendered page set</td><td>10,000 documents × 5 pages × 2 MB/page</td><td>100</td></tr>
+<tr><td>Labels and manifests</td><td>10,000 documents × 50 KB</td><td>0.5</td></tr>
+<tr><td>Primary corpus</td><td>PDFs + page renders + labels</td><td><strong>120.5</strong></td></tr>
+<tr><td>Primary + two full backup copies</td><td>3 × 120.5 GB</td><td><strong>361.5</strong></td></tr>
+</tbody></table></div>
+<p>Exclude model weights, adapters, optimizer checkpoints, OCR caches, extra versions and temporary workspace from this table; budget those separately. Replace overlapping source/image allowances in the existing ledger—do not add the same PDFs twice. A shared corpus is not another full copy per model. Backup frequency and changed bytes determine transfer charges, not just the number of retained copies.</p>
+<p><strong>Annotation sensitivity:</strong> 5–15 minutes per accepted document gives approximately 830–2,500 first-pass hours for 10,000 documents, before second review and adjudication. Complex multipage documents may take longer. Time the calibration batch before committing staffing or cost.</p>
+<p><strong>Training-work sensitivity:</strong> 7,000 accepted training records × 4,000–8,000 average processor-expanded positions × 3 epochs = 84–168 million processed positions if there is one record/document. Chunking, padding and augmentation change record counts and work. This is not GPU-hours: measure the exact recipe's step time, memory, checkpoint and evaluation overhead. Do not use advertised maximum context or inference tokens/s as a training-time estimate.</p>
+</section>
+
+<section id="data-evidence"><h3>5. Evidence and model-selection boundaries</h3>
+<ul>
+<li><a href="01-classification.html">Classification guide</a>: 110-type coverage plan, 11,000 / 2,200 / 4,400 documents; these are acquisition assumptions, not measured adequacy.</li>
+<li><a href="02-document-vision.html">OCR guide</a> and <a href="https://lighton.ai/lighton-blogs/lighton-demonstrates-the-flexibility-of-its-ocr-model-by-adapting-it-to-arabic-through-targeted-training">LightOn's Arabic adaptation</a>: 12,000 synthetic pages in that published adaptation; our 1,500 / 1,500 holdouts are policy, not the publisher's split or proof of French accuracy.</li>
+<li><a href="03-retrieval.html">Retrieval guide</a> and <a href="https://github.com/project-miracl/miracl">MIRACL</a>: 4,006 French+English training and 1,142 development queries inform our rounded acquisition plan; independent test queries and pair counts are our design.</li>
+<li><a href="https://aws.amazon.com/blogs/machine-learning/how-apoidea-group-enhances-visual-information-extraction-from-banking-documents-with-multimodal-models-using-llama-factory-on-amazon-sagemaker-hyperpod/">AWS / Apoidea</a>: reports useful Qwen2-VL-7B adaptation with a few thousand task-specific samples. Different model, table task and corpus; not a Qwen3.5-122B minimum or transferable accuracy result.</li>
+<li><a href="https://aclanthology.org/2021.emnlp-main.300/">FinQA</a>: 6,251 / 883 / 1,147 question-answer examples across 2,789 report pages. The <a href="04-large-models.html">older large-model guide</a> uses that scale as an analogue. It is not 8,281 independently annotated documents. The new 3,000 / 10,000-document extraction programme above is an explicit planning recommendation, not a revised historical FinQA split.</li>
+<li><a href="https://huggingface.co/Qwen/Qwen3.5-27B">Qwen3.5-27B</a> and <a href="https://huggingface.co/Qwen/Qwen3.5-122B-A10B">Qwen3.5-122B-A10B</a>: compare on the same reviewed cases; total parameter count alone does not set dataset size. Other project benchmarks and cold-start estimates do not establish performance here.</li>
+<li><a href="https://swift.readthedocs.io/en/v4.4/BestPractices/Qwen3_5-Best-Practice.html">Qwen3.5 training/data preparation in ms-swift</a>: model-specific dense/MoE training and multimodal JSONL formats. This is not evidence that a particular two-GPU recipe fits.</li>
+</ul>
+<p><strong>Decision:</strong> review a narrow baseline first, then run the 3,000-document pilot. Adapt the smaller candidate before escalating to 122B unless measured quality justifies it. The new Qwen comparison is a proposal alongside the older guides' candidate order, not a claim that all candidates must be trained or deployed.</p>
+</section>
+</section>
+<footer>Design mapping, not deployment/security certification. No cloud resources or access policies changed. Some Vertex documentation URLs now redirect under Google's Gemini Enterprise Agent Platform naming; the custom-model and networking distinctions above remain explicit.</footer>
+<p><small>The guides and diagrams are public. Source files, ledgers and the offline archive require access to the private GitHub repository.</small></p></main>
+<script>
+(() => {
+  const navigation = document.querySelector('.tabs');
+  const tabs = Array.from(navigation.querySelectorAll('a'));
+  const panels = Array.from(document.querySelectorAll('[data-panel]'));
+  navigation.setAttribute('role', 'tablist');
+  panels.forEach(panel => panel.setAttribute('role', 'tabpanel'));
+  function activate(panel) {
+    panels.forEach(item => { item.hidden = item !== panel; });
+    tabs.forEach(tab => {
+      const selected = tab.hash === '#' + panel.id;
+      tab.setAttribute('aria-selected', String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+    });
+  }
+  function followHash() {
+    const target = document.getElementById(location.hash.slice(1));
+    activate(target?.closest('[data-panel]') || panels[0]);
+  }
+  function choose(tab) {
+    activate(document.getElementById(tab.hash.slice(1)));
+    if (location.hash !== tab.hash) history.pushState(null, '', tab.hash);
+  }
+  tabs.forEach((tab, index) => {
+    tab.setAttribute('role', 'tab');
+    tab.setAttribute('aria-controls', tab.hash.slice(1));
+    tab.addEventListener('click', event => {
+      event.preventDefault();
+      choose(tab);
+    });
+    tab.addEventListener('keydown', event => {
+      let next;
+      if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+      else if (event.key === 'ArrowLeft') next = (index + tabs.length - 1) % tabs.length;
+      else if (event.key === 'Home') next = 0;
+      else if (event.key === 'End') next = tabs.length - 1;
+      else if (event.key === ' ') {
+        event.preventDefault();
+        choose(tab);
+        return;
+      } else return;
+      event.preventDefault();
+      choose(tabs[next]);
+      tabs[next].focus();
+    });
+  });
+  window.addEventListener('hashchange', followHash);
+  followHash();
+})();
+</script>
+</body></html>
