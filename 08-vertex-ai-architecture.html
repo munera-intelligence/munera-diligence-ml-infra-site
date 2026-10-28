@@ -57,7 +57,7 @@ body{margin:0!important;padding:0!important;max-width:none!important;background:
 </section>
 <section id="architecture"><h3>Architecture and network perimeter for the quote</h3>
 <p class="lead"><strong>Vertex-native alternative: use Google-managed ML lifecycle services.</strong> Vertex AI Pipelines, Experiments/ML Metadata, Model Registry and Vector Search replace the corresponding lab responsibilities in this option; they are not deployments of Airflow, MLflow or Qdrant. We retain our model code, evaluation rules, human approval and application workflows.</p>
-<div class="note"><strong>Two distinct deployment options, not one combined stack.</strong> This quote uses Vertex-native managed services. The <a href="#hybrid">OVH + GCP Deployment</a> plan instead keeps Airflow and MLflow on OVH and uses GCP Batch for GPU jobs; it does not require Vertex Pipelines, Experiments, Model Registry or Vector Search. Google-managed does not mean entirely closed-source: pipeline definitions use Kubeflow Pipelines or TFX, and our training containers can use open-source frameworks.</div>
+<div class="note"><strong>Two distinct deployment options, not one combined stack.</strong> This quote uses Vertex-native managed services. The <a href="#hybrid">OVH + GCP Deployment</a> plan instead keeps all data in Google Cloud Storage, runs Airflow and MLflow on OVH for coordination only, and uses GCP Batch for GPU jobs; it does not require Vertex Pipelines, Experiments, Model Registry or Vector Search. Google-managed does not mean entirely closed-source: pipeline definitions use Kubeflow Pipelines or TFX, and our training containers can use open-source frameworks.</div>
 <div class="links"><a href="diagrams/09-vertex-ai-key-modules.svg">Open full-size diagram</a><a href="https://github.com/munera-intelligence/munera-diligence-ml-infra/blob/main/diagrams/09-vertex-ai-key-modules.d2" title="Repository access required">Editable D2 source</a><a href="#mapping">HTML → Vertex mapping</a><a href="#network">Network paths</a></div>
 <figure><img class="diagram" src="diagrams/09-vertex-ai-key-modules.svg" alt="D2 architecture: controlled import outside a VPC Service Controls perimeter; regional artifact stores inside it; Munera customer VPC on the left and Google-managed Vertex AI on the right. Private Google API access points right, PSC interface egress points left, and prediction and vector-search PSC connections point right. Vertex Pipelines launches Custom Training, which logs to Experiments and passes evaluated, human-approved models to Model Registry and private Prediction Endpoints. Temporal stays in Munera's application."><figcaption>Rendered from D2. Amber = resource/API protection perimeter. Green = customer VPC and private connection points. Blue = Google-managed Vertex services, not Airflow/MLflow/Qdrant deployments and not machines inside our VPC. Open-source names in the comparison table describe alternative responsibilities, not software installed in these boxes. One environment shown; repeat with separate development, staging and production grants/policies. Arrows show request initiation, not one-way response traffic.</figcaption></figure>
 
@@ -191,7 +191,7 @@ body{margin:0!important;padding:0!important;max-width:none!important;background:
 </section>
 </section>
 <section id="hybrid" data-panel aria-labelledby="tab-hybrid" tabindex="0">
-<div class="note"><strong>Current deployment priority: understand the data first.</strong> The acquisition targets in Data Requirements are planning scenarios, not a prerequisite to open the lake or evidence that the existing corpus is training-ready. This tab stages the OVH platform and GCP execution path without committing to a GPU size.</div>
+<div class="note"><strong>Current deployment priority: understand the data first.</strong> The acquisition targets in Data Requirements are planning scenarios, not a prerequisite to start or evidence that the existing corpus is training-ready. This tab keeps all data in Google Cloud Storage in Montréal, runs only coordination services on OVH, and does not commit to a GPU size.</div>
 <nav class="hybrid-toc" aria-label="Hybrid deployment contents"><div class="toc">
 <ul>
 <li><a href="#hybrid-1-scope-evidence-and-decisions">1. Scope, evidence, and decisions</a></li>
@@ -201,19 +201,19 @@ body{margin:0!important;padding:0!important;max-width:none!important;background:
 <li><a href="#hybrid-5-data-discovery-and-preparation-experiment">5. Data discovery and preparation experiment</a></li>
 <li><a href="#hybrid-6-dataset-releases-and-evaluation-contract">6. Dataset releases and evaluation contract</a></li>
 <li><a href="#hybrid-7-mlflow-airflow-and-yaml-responsibilities">7. MLflow, Airflow, and YAML responsibilities</a></li>
-<li><a href="#hybrid-8-gcp-gpu-execution-and-cross-cloud-exchange">8. GCP GPU execution and cross-cloud exchange</a></li>
+<li><a href="#hybrid-8-gcp-execution-and-cross-cloud-control">8. GCP execution and cross-cloud control</a></li>
 <li><a href="#hybrid-9-qwen35-122b-a10b-qualification-gate">9. Qwen3.5-122B-A10B qualification gate</a></li>
 <li><a href="#hybrid-10-security-compliance-recovery-and-spending-boundaries">10. Security, compliance, recovery, and spending boundaries</a></li>
 <li><a href="#hybrid-11-deployment-sequence-and-acceptance-gates">11. Deployment sequence and acceptance gates</a></li>
 <li><a href="#hybrid-12-operational-acceptance-scenarios">12. Operational acceptance scenarios</a></li>
-<li><a href="#hybrid-13-architecture-risks-and-unresolved-decisions">13. Architecture risks and unresolved decisions</a></li>
+<li><a href="#hybrid-13-architecture-review-and-unresolved-decisions">13. Architecture review and unresolved decisions</a></li>
 <li><a href="#hybrid-14-references-and-evidence-boundaries">14. References and evidence boundaries</a></li>
 </ul>
 </div>
 </nav>
 <h2 id="hybrid-ovh-gcp-deployment">OVH + GCP Deployment</h2>
-<p><strong>Status:</strong> proposed implementation specification; not a deployed system, compliance attestation, capacity reservation, or training-readiness approval.</p>
-<p><strong>Primary decision:</strong> establish the data lake and quantify invoice data readiness before allocating training GPUs. OVH owns canonical data and the platform control plane; GCP supplies bounded, on-demand GPU execution. MLflow tracks experiments; Airflow coordinates work; neither replaces document review or dataset governance.</p>
+<p><strong>Status:</strong> proposed implementation specification; not a deployed system, compliance attestation, capacity reservation, or training-readiness approval. Revised 28 October 2026: the data lake stays in Google Cloud Storage and OVH no longer hosts canonical data.</p>
+<p><strong>Primary decision:</strong> keep the existing Google Cloud Storage lake in Montréal (<code>northamerica-northeast1</code>) as the only copy of documents and everything derived from them, and quantify invoice data readiness before allocating training GPUs. OVH runs only the coordination plane: Airflow, its PostgreSQL metadata and the MLflow tracking server. Coordination passes SHA-256 document IDs, release IDs and manifest URIs, never document bytes, text, labels or signed URLs. GCP supplies CPU preparation and bounded, on-demand GPU execution next to the data. MLflow tracks experiments; Airflow coordinates work; neither replaces document review or dataset governance.</p>
 <p><strong>Configuration:</strong> MLflow tracks experiments. Version-controlled YAML defines workload configuration consumed by reviewed launcher code; Airflow DAGs remain versioned Python DAGs.</p>
 <h3 id="hybrid-1-scope-evidence-and-decisions">1. Scope, evidence, and decisions</h3>
 <h4 id="hybrid-11-architecture-alignment">1.1 Architecture alignment</h4>
@@ -228,27 +228,27 @@ body{margin:0!important;padding:0!important;max-width:none!important;background:
 <tbody>
 <tr>
 <td>Canonical data and dataset versioning</td>
-<td>Private OVH BHS object storage, a PostgreSQL catalog, immutable release manifests, Git-managed code/schema/configuration; DVC may later index released assets, not become a second approval system</td>
+<td>Existing Montréal GCS buckets: landing, SHA-256-named originals archive, processed text/JSON; BigQuery warehouse; immutable release manifests in GCS; Git-managed code/schema/configuration. No second lake, sync job or dual write on OVH. DVC may later index released assets, not become a second approval system</td>
 </tr>
 <tr>
 <td>Experiment tracking and model registry</td>
-<td>MLflow on OVH; separate PostgreSQL database/user; OVH object storage for durable experiment artifacts</td>
+<td>MLflow tracking server on OVH with a separate PostgreSQL database/user for metadata; GCP jobs write artifacts directly to a Montréal GCS bucket; the server neither proxies nor stores artifact bytes</td>
 </tr>
 <tr>
 <td>Training and experiment coordination</td>
-<td>Airflow on OVH; lightweight orchestration tasks, separate CPU preparation worker, remote GCP Batch jobs</td>
+<td>Airflow on OVH; lightweight orchestration only; it submits and monitors GCP CPU preparation and Batch jobs with short-lived federated credentials</td>
 </tr>
 <tr>
 <td>GPU execution</td>
-<td>GCP Canadian region selected per qualified recipe and actual capacity; no distributed training across OVH and GCP</td>
+<td>GCP Canadian region selected per qualified recipe and actual capacity; Montréal reads the lake without transfer charges; no distributed training across OVH and GCP</td>
 </tr>
 <tr>
 <td>Controlled import</td>
-<td>Dedicated preparation/transfer worker, isolated from SQL and platform administration</td>
+<td>GCP import job for external model weights and containers into an authorized Canadian cache; OVH never relays bytes</td>
 </tr>
 <tr>
 <td>Identity and network edge</td>
-<td>Authenticated HTTPS interfaces, explicit project authorization, separate human/workload identities</td>
+<td>Authenticated HTTPS interfaces, explicit project authorization, separate human/workload identities; Workload Identity Federation from OVH to Google; no long-lived Google keys on OVH</td>
 </tr>
 <tr>
 <td>Temporal</td>
@@ -270,7 +270,7 @@ body{margin:0!important;padding:0!important;max-width:none!important;background:
 </table></div>
 <p>The baseline's 24-CPU/64-GiB allocation and storage ledgers describe a broader, different workload scenario. They are not measured requirements for this pilot. Its Qwen3-VL-32B examples must not size Qwen3.5-122B-A10B.</p>
 <h4 id="hybrid-12-existing-data-evidence">1.2 Existing-data evidence</h4>
-<p>The following is the <strong>earlier read-only session inventory</strong>, not a fresh cloud audit performed while writing this specification. Reconcile it at import because source systems are live. Sizes are decimal GB.</p>
+<p><strong>Storage audit, 28 October 2026 (read-only, plus the archive remediation recorded below).</strong> Source systems are live; reconcile again before each release. Sizes are decimal GB. Every bucket and BigQuery dataset listed is in <code>northamerica-northeast1</code>.</p>
 <div class="table-wrap" role="region" tabindex="0" aria-label="Hybrid deployment specification table"><table>
 <thead>
 <tr>
@@ -280,20 +280,51 @@ body{margin:0!important;padding:0!important;max-width:none!important;background:
 </thead>
 <tbody>
 <tr>
-<td>GCP raw-ingestion bucket: 782 objects, approximately 3.14 GB, including 590 PDFs</td>
-<td>Existing files are available; lack of a training dataset does not mean lack of documents</td>
+<td>Landing bucket: 782 live objects (774 unique contents), 3.14 GB, all uploaded 2026-10-16; versioning on; Nearline after 30 days; <strong>deleted after 90 days</strong>, first on 2027-01-14</td>
+<td>Landing zone, not the permanent store; deletion is safe only after each original is verified in the archive</td>
 </tr>
 <tr>
-<td>The evaluation corpus contains the same 771 unique MD5-and-size signatures as the raw corpus</td>
-<td>Do not count the copied corpus twice; perform canonical SHA-256 verification during import</td>
+<td>Originals archive: objects named by SHA-256 with <code>sha256</code> metadata, the application's archive convention; 7-year retention policy, <strong>not locked</strong></td>
+<td>The permanent originals store. Before 28 October 2026 it held only 281 of the 774 unique landing contents</td>
 </tr>
+<tr>
+<td>Remediation, 28 October 2026: the 493 missing originals (2.63 GB) were copied server-side into the archive and verified by size, CRC32C and MD5; a promotion manifest is kept in the archive</td>
+<td>The landing deletion rule can no longer destroy the only copy of this corpus: landing content missing from the archive is now 0. 490 of the 493 originals match existing extraction records; the other 3 were never extracted</td>
+</tr>
+<tr>
+<td>Evaluation copy: 1,890 objects including a 782-object corpus copy from 2026-09-16; deleted after 120 days; not managed by Terraform</td>
+<td>A working copy, not a source of truth; do not count the corpus twice</td>
+</tr>
+<tr>
+<td>Processed text and JSON buckets: 906 / 937 live objects plus about 12,700 noncurrent versions</td>
+<td>Derived text and extractions, not ground truth</td>
+</tr>
+<tr>
+<td>Candidate SFT bucket: 123 objects of batch requests and Gemini prediction outputs</td>
+<td>Its name does not establish supervised ground truth</td>
+</tr>
+<tr>
+<td>Six BigQuery datasets are in Montréal; the review app's Firestore database is in <code>nam5</code>, a US multi-region</td>
+<td>Do not place new catalog or annotation data in Firestore until it moves (deferred, section 13)</td>
+</tr>
+<tr>
+<td>The OVH project for this platform is empty: no instances, volumes, Kubernetes, databases, users, private networks or object containers</td>
+<td>Nothing to migrate or clean up on OVH</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Earlier inventory, not re-audited on 28 October 2026:</strong></p>
+<div class="table-wrap" role="region" tabindex="0" aria-label="Hybrid deployment specification table"><table>
+<thead>
+<tr>
+<th scope="col">Observation</th>
+<th scope="col">Consequence</th>
+</tr>
+</thead>
+<tbody>
 <tr>
 <td>Latest extraction records contain 191 candidate invoice IDs</td>
 <td>This is not an approved invoice count and does not establish the previously discussed 201-document cohort</td>
-</tr>
-<tr>
-<td>candidate SFT bucket includes batch requests and Gemini prediction outputs</td>
-<td>Its name does not establish supervised ground truth</td>
 </tr>
 <tr>
 <td>Latest review-task snapshot: 210 tasks, none SFT-eligible; a reviewed invoice flag is associated with a fixture-like ID and missing reviewer</td>
@@ -309,24 +340,30 @@ body{margin:0!important;padding:0!important;max-width:none!important;background:
 </tr>
 </tbody>
 </table></div>
-<p>Prior infrastructure observations: BHS object storage was available and no BHS S3 buckets were listed in the OVH project; GCP Batch was not enabled; Canadian H100 allocation was not established. These are preflight inputs, not current provisioning guarantees.</p>
+<p>Platform observations from the 28 October audit: the Batch API and the Security Token Service API (<code>sts.googleapis.com</code>) are disabled; the IAM Credentials and Eventarc APIs are enabled. The Terraform upload trigger is defined but not deployed, so new uploads are neither processed nor archived automatically. Canadian H100 allocation was not established. These are preflight inputs, not provisioning guarantees.</p>
 <h4 id="hybrid-13-non-goals-of-the-first-deployment">1.3 Non-goals of the first deployment</h4>
-<p>No fine-tuning, permanent GPU, public unauthenticated notebook, production inference SLA, petabyte-scale lakehouse, blanket migration/deletion, or automatic acceptance of generated labels. No claim that supplier SOC reports cover our application controls. This artifact authorizes no resource creation by itself.</p>
+<p>No fine-tuning, permanent GPU, public unauthenticated notebook, production inference SLA, petabyte-scale lakehouse, second data lake or cross-cloud data sync, blanket migration/deletion, or automatic acceptance of generated labels. No claim that supplier SOC reports cover our application controls. This artifact authorizes no resource creation by itself.</p>
+<h4 id="hybrid-14-decision-record-28-october-2026">1.4 Decision record, 28 October 2026</h4>
+<ul>
+<li>The data lake stays in Google Cloud Storage in Montréal. OVH hosts coordination only; nothing is copied or synced between clouds.</li>
+<li>Originals are protected by promoting them into the archive, not by removing the landing deletion rule. Done for the 2026-10-16 corpus.</li>
+<li>Ingestion sources (client uploads, connectors to client systems, crawling) are not chosen yet. Whatever is chosen writes directly into the landing bucket; no source routes document bytes through OVH.</li>
+<li>The Firestore <code>nam5</code> location is a deferred follow-up (section 13).</li>
+</ul>
 <h3 id="hybrid-2-target-topology-and-trust-boundaries">2. Target topology and trust boundaries</h3>
-<figure><div class="links"><a href="diagrams/10-ovh-gcp-hybrid-deployment.svg" target="_blank" rel="noopener">Open full architecture diagram</a><a href="https://github.com/munera-intelligence/munera-diligence-ml-infra/blob/main/diagrams/10-ovh-gcp-hybrid-deployment.d2" title="Repository access required">Editable D2 source</a></div><div class="hybrid-diagram"><img class="diagram" src="diagrams/10-ovh-gcp-hybrid-deployment.svg" alt="OVH hosts the canonical data lake, review catalog, Airflow and MLflow. A controlled transfer service stages approved releases to Canadian GCP Batch jobs and imports verified outputs. GPU workers receive no OVH credentials."></div><figcaption>Proposed service and data-flow boundaries, not deployment or security approval. Start with a CPU cross-cloud execution proof before GPU qualification.</figcaption></figure>
-
-<p>GCP workers receive no OVH administrative credentials, database credentials, raw-lake access, or MLflow privileged token. They consume only the release subset staged for the job and write only authorized run outputs. The OVH transfer/orchestration services import verified results and publish tracking information. This avoids exposing the entire OVH platform to arbitrary training code.</p>
-<p>The GCS staging copy is an execution cache, not a second independently editable dataset. Retained checkpoints stay in GCP until verified import completes; temporary resources are not deleted merely because the training process exited.</p>
+<figure><div class="links"><a href="diagrams/10-ovh-gcp-hybrid-deployment.svg" target="_blank" rel="noopener">Open full architecture diagram</a><a href="https://github.com/munera-intelligence/munera-diligence-ml-infra/blob/main/diagrams/10-ovh-gcp-hybrid-deployment.d2" title="Repository access required">Editable D2 source</a></div><div class="hybrid-diagram"><img class="diagram" src="diagrams/10-ovh-gcp-hybrid-deployment.svg" alt="All documents and derived data stay in Google Cloud Storage in Montréal: uploads land, are verified by SHA-256 and promoted to an originals archive, then processed, approved into releases and read in place by CPU and GPU jobs. OVH runs only Airflow, MLflow and their PostgreSQL metadata; it submits GCP jobs with short-lived federated credentials and records metrics and artifact URIs."></div><figcaption>Proposed service and data-flow boundaries, not deployment or security approval. Dashed line: job submission, job status and completion manifests over short-lived federated credentials; no document data crosses between OVH and GCP.</figcaption></figure>
+<p>OVH services hold no document bytes, page images, extracted text, labels, signed URLs or Google service-account keys. They obtain short-lived Google credentials through Workload Identity Federation and may only submit and inspect jobs and read release and completion manifests. GCP jobs receive no OVH administrative, database or MLflow credentials and never call OVH: they read approved inputs in place and write only their assigned run outputs, including a completion manifest that Airflow reads and records in MLflow.</p>
+<p>A compromised coordination plane therefore exposes job metadata and the ability to launch reviewed recipes, not the corpus, provided jobs can run only pinned images from a registry the coordinator cannot write to and job workers have no internet egress (section 8). There is no staging copy and no import step: the release in GCS is the job input, and run outputs stay in GCS. Temporary resources are not deleted merely because the training process exited.</p>
 <h3 id="hybrid-3-phase-one-infrastructure-and-interfaces">3. Phase-one infrastructure and interfaces</h3>
 <h4 id="hybrid-31-minimal-placement">3.1 Minimal placement</h4>
-<p>Use two trust boundaries, even for the pilot:</p>
+<p>Keep two trust boundaries, now split by provider:</p>
 <ul>
-<li><strong>Platform VM:</strong> authenticated UI/API, PostgreSQL, and later MLflow/Airflow. Proposed starting planning envelope: 8 vCPU, 32 GiB RAM, 100 GiB usable encrypted block storage. This is not a provider SKU, benchmark, or HA deployment. Recheck before adding Airflow or increasing concurrency.</li>
-<li><strong>Preparation/import VM:</strong> document parsing, rendering, local OCR, checksum/import tasks. Proposed initial envelope: 4 vCPU, 16 GiB RAM, 100 GiB capped encrypted scratch. One preparation job at a time initially; enforce page, decompression, time, memory, and disk limits. Increase only after measurement.</li>
-<li><strong>OVH BHS object storage:</strong> usage-based canonical storage, not an arbitrary TB reservation. Provider endpoint observed previously: <code>https://s3.bhs.io.cloud.ovh.net/</code>.</li>
+<li><strong>OVH coordination VM (Beauharnois):</strong> Airflow, PostgreSQL with separate databases/users for Airflow and MLflow, and the MLflow tracking server. Proposed starting planning envelope unchanged: 8 vCPU, 32 GiB RAM, 100 GiB usable encrypted block storage. It no longer hosts the upload UI, catalog content or document preparation, so measure before resizing. This is not a provider SKU, benchmark, or HA deployment.</li>
+<li><strong>GCP preparation jobs (Montréal):</strong> document parsing, rendering, local OCR, checksum and promotion tasks as Cloud Run jobs or Batch CPU jobs under dedicated service accounts. Enforce page, decompression, time, memory and disk limits; one preparation job at a time initially. Increase only after measurement.</li>
+<li><strong>GCS lake (Montréal):</strong> the existing buckets mapped in section 4.1. No OVH object storage.</li>
 <li><strong>No GCP GPU resources in phase one.</strong> Model-assisted cleaning, if later justified, is a separately bounded job, not a hidden dependency of uploads.</li>
 </ul>
-<p>Container isolation on a shared platform VM is a pilot compromise, not a hard tenant boundary or production HA. Parsing untrusted documents remains off the SQL/control-plane VM. Do not expose a host Docker socket to upload handlers or workload code.</p>
+<p>Running Airflow, PostgreSQL and MLflow on one VM is a pilot compromise, not production HA. Parsing untrusted documents stays in GCP jobs, away from the coordination VM. Do not expose a host Docker socket to workload code.</p>
 <h4 id="hybrid-32-logical-endpoints">3.2 Logical endpoints</h4>
 <p>Actual DNS names are selected under the organization's existing domain before exposure; none are live URLs in this specification.</p>
 <div class="table-wrap" role="region" tabindex="0" aria-label="Hybrid deployment specification table"><table>
@@ -339,54 +376,54 @@ body{margin:0!important;padding:0!important;max-width:none!important;background:
 </thead>
 <tbody>
 <tr>
-<td>Data portal</td>
+<td>Data portal: the existing upload and review app on Cloud Run</td>
 <td>Uploaders, reviewers, authorized data scientists</td>
-<td>HTTPS behind SSO/MFA and per-project authorization</td>
+<td>HTTPS behind SSO/MFA and per-project authorization; issues short-lived, object-specific signed upload URLs</td>
 </tr>
 <tr>
-<td>MLflow UI/API</td>
-<td>Approved research group and trusted importer</td>
-<td>Authenticated access; one trust group initially; no anonymous tracking</td>
+<td>MLflow UI/API on OVH</td>
+<td>Approved research group and the Airflow coordinator</td>
+<td>Authenticated access; one trust group initially; metadata only, no anonymous tracking</td>
 </tr>
 <tr>
-<td>Airflow UI/API</td>
+<td>Airflow UI/API on OVH</td>
 <td>Operators only</td>
 <td>VPN or identity-aware access; not an uploader interface</td>
 </tr>
 <tr>
-<td>PostgreSQL</td>
-<td>Specific platform services</td>
-<td>Private network only; separate databases/users for catalog, Airflow, MLflow</td>
+<td>PostgreSQL on OVH</td>
+<td>Airflow and MLflow only</td>
+<td>Private network only; separate databases/users</td>
 </tr>
 <tr>
-<td>Object storage</td>
-<td>Trusted services and narrowly authorized clients</td>
-<td>Private buckets; short-lived, object-specific presigned access where needed</td>
+<td>Object storage: GCS only</td>
+<td>Upload API, GCP job identities and narrowly authorized people</td>
+<td>Private buckets with uniform bucket-level access and public access prevention; signed URLs only where needed</td>
 </tr>
 <tr>
-<td>GCP Batch and GCS APIs</td>
-<td>Dedicated workload identities</td>
-<td>Authenticated outbound API calls; no inbound GCP callback required</td>
+<td>GCP Batch, Cloud Run jobs and GCS APIs</td>
+<td>The federated OVH coordinator and dedicated GCP workload identities</td>
+<td>Outbound API calls from OVH only; no inbound path from GCP to OVH</td>
 </tr>
 </tbody>
 </table></div>
-<p>A public HTTPS hostname does not mean publicly readable documents. Presigned URLs must not appear in logs, analytics, or persistent manifests.</p>
+<p>A public HTTPS hostname does not mean publicly readable documents. Signed URLs must not appear in logs, analytics, or persistent manifests.</p>
 <h4 id="hybrid-33-upload-and-review-application">3.3 Upload and review application</h4>
-<p>First assess the existing GCP-backed HITL application for reusable upload, invoice display, field correction, and identity features. Do not assume it already enforces the needed approval/provenance rules. If reused, configure the new deployment's catalog and bytes in Canada; the previously observed Firestore <code>nam5</code> location is not a Canadian regional catalog.</p>
+<p>Reuse the existing GCP upload and review application on Cloud Run as the data portal; do not build a second portal on OVH. Do not assume it already enforces the needed approval/provenance rules: verify each requirement below. Its Firestore database is in <code>nam5</code>, not a Canadian regional catalog, so new catalog and annotation data must not land there.</p>
 <p>Required behavior:</p>
 <ol>
 <li>User signs in and receives project-scoped permissions.</li>
 <li>Upload session captures source, project/client, intended use, permission-to-train status, and an optional source-system identifier.</li>
-<li>Upload lands in quarantine through a server-authorized single-object or multipart upload. Browser access never includes permanent storage credentials.</li>
-<li>Completion checks object existence, expected size, checksum, and ownership. The server schedules validation; an interrupted upload cannot appear as a ready document.</li>
+<li>Upload lands in the landing bucket through a server-issued, short-lived, object-specific signed URL. Browser access never includes permanent storage credentials.</li>
+<li>Completion checks object existence, expected size, checksum, and ownership, then promotes the verified original into the archive under its SHA-256 name. An interrupted upload cannot appear as a ready document.</li>
 <li>Original and derived pages are displayed securely; extraction fields can be corrected with source evidence.</li>
 <li>Draft, reviewed, approved, rejected, and superseded revisions are distinguishable. Approval records an authorized approver, timestamp, and exact revision.</li>
 <li>Data scientists can inspect permitted documents and export approved releases with manifests.</li>
 </ol>
 <p>No requirement to introduce Label Studio if the current UI can satisfy this contract. If used, an annotation canvas is not sufficient by itself: SSO, project access, approval history, and authorization must be explicitly supplied and tested.</p>
 <h3 id="hybrid-4-lake-layout-catalog-and-permissions">4. Lake layout, catalog, and permissions</h3>
-<h4 id="hybrid-41-logical-storage-zones">4.1 Logical storage zones</h4>
-<p>Bucket names below are roles, not created resources. Use separate buckets for materially different access boundaries; prefix naming alone is not authorization.</p>
+<h4 id="hybrid-41-storage-zones-on-the-existing-buckets">4.1 Storage zones on the existing buckets</h4>
+<p>Use separate buckets for materially different access boundaries; prefix naming alone is not authorization. All buckets are regional in Montréal.</p>
 <div class="table-wrap" role="region" tabindex="0" aria-label="Hybrid deployment specification table"><table>
 <thead>
 <tr>
@@ -397,56 +434,57 @@ body{margin:0!important;padding:0!important;max-width:none!important;background:
 </thead>
 <tbody>
 <tr>
-<td>Intake/quarantine</td>
-<td>Untrusted uploads, rejection evidence</td>
-<td>Upload service; validation worker within assigned work</td>
+<td>Landing/quarantine</td>
+<td>Untrusted uploads awaiting verification; rejection evidence. Nearline after 30 days, deleted after 90</td>
+<td>Upload identity: create only, no read or delete; validation job within assigned work</td>
 </tr>
 <tr>
-<td>Raw</td>
-<td>Original bytes and source accession manifests</td>
-<td>Promotion service; no routine end-user overwrite</td>
+<td>Originals archive</td>
+<td>Verified original bytes named by SHA-256; accession manifests. 7-year retention, not locked</td>
+<td>Promotion identity only; create-only (<code>ifGenerationMatch=0</code>)</td>
 </tr>
 <tr>
-<td>Prepared</td>
-<td>Page images, embedded/OCR text, coordinates, quality reports</td>
-<td>Preparation worker, version-specific output paths</td>
+<td>Prepared: processed text/JSON buckets and the BigQuery warehouse</td>
+<td>Page text, extractions, coordinates, quality reports</td>
+<td>Preparation jobs; version-specific outputs</td>
 </tr>
 <tr>
 <td>Annotations</td>
-<td>Canonical labels, revisions, evidence and decisions</td>
+<td>Canonical labels, revisions, evidence and decisions, in the Canadian catalog store (section 4.2)</td>
 <td>Review service</td>
 </tr>
 <tr>
-<td>Releases</td>
+<td>Releases: new Montréal bucket, not yet created</td>
 <td>Approved frozen manifests, splits and training/evaluation views</td>
 <td>Release publisher only</td>
 </tr>
 <tr>
-<td>Experiments</td>
-<td>Metrics, reports, adapters, checkpoints and model manifests</td>
-<td>Trusted artifact importer/MLflow service within its boundary</td>
+<td>Experiments: new Montréal artifact bucket, not yet created</td>
+<td>Metrics, reports, adapters, checkpoints and model manifests, one prefix per MLflow run</td>
+<td>The run's assigned GCP job identity</td>
 </tr>
 <tr>
-<td>Backup/audit</td>
-<td>Recoverable catalog snapshots, necessary objects, access/change records</td>
+<td>Backup/audit: an audit dataset plus a backup location still to select</td>
+<td>Catalog snapshots, access/change records</td>
 <td>Dedicated backup/audit identity; no ordinary workload delete</td>
 </tr>
 </tbody>
 </table></div>
-<p>Enable encryption and versioning where appropriate and test denial of anonymous access. OVH's S3 feature set is not identical to AWS: use supported OVH identities/policies and private ACLs; do not assume AWS bucket policies, Block Public Access, KMS, or native bucket notifications are portable. Upload-completion API plus periodic inventory reconciliation is sufficient; no object-event dependency is assumed.</p>
-<p>Raw bytes and published releases are logically immutable: changes create a new version/release. This is not WORM. Define legal retention, withdrawal, deletion, backup treatment, and any retention locks before enabling irreversible policies.</p>
+<p>The evaluation copy and the candidate SFT bucket are working copies, not zones: bring them under Terraform or retire them.</p>
+<p>Versioning is on for landing and originals, and soft delete keeps deleted objects for 7 days. Deleting a landing object is safe only after its promotion is verified. Until promotion runs automatically for every upload, a scheduled reconciliation must fail loudly when any landing object reaches 60 days without an archived original (a proposed threshold, well before the 90-day rule). Object-event triggers are optional; upload-completion promotion plus periodic reconciliation is sufficient.</p>
+<p>Originals and published releases are immutable: changes create a new object or release. The archive's 7-year bucket retention policy is not locked: an archived original cannot be deleted before its retention expires unless the bucket policy is removed or shortened, which remains possible until someone locks it. Locking is irreversible. Before locking, the data owner defines legal retention, client withdrawal or destruction obligations, and backup treatment.</p>
 <h4 id="hybrid-42-catalog-contract">4.2 Catalog contract</h4>
 <p>Minimum entities:</p>
 <ul>
 <li><code>document</code>: stable ID, project/access scope, SHA-256, original URI/object version, byte size, MIME type, source, uploader, timestamp, training-use permission and document category.</li>
-<li><code>source_accession</code>: provenance for each appearance of a document, including legacy GCP object generation and table references; deduplication never erases source relationships.</li>
+<li><code>source_accession</code>: provenance for each appearance of a document, including landing and archive object generations and table references; deduplication never erases source relationships.</li>
 <li><code>document_family</code>: duplicates, near-duplicates, revisions, attachments and common parent documents; restricted membership across client boundaries.</li>
 <li><code>preparation</code>: document version, tool/container digest, configuration hash, page count, derivatives, execution metrics and failure/quality flags.</li>
 <li><code>annotation_revision</code>: schema version, field values and statuses, source evidence, draft producer, annotator, reviewer/approver, timestamps, correction reason and supersession.</li>
 <li><code>dataset_release</code>: exact document/preparation/annotation revisions, permissions snapshot, split map, exclusion reasons, manifest hash and approval.</li>
 <li><code>execution</code>: logical run ID, release/config/model identifiers, provider job/attempt IDs, state, artifacts, metrics and cost attribution.</li>
 </ul>
-<p>Object storage contains bytes; PostgreSQL indexes identity, permissions and workflow state. Airflow state does not constitute label approval. MLflow run IDs do not constitute dataset identity.</p>
+<p>Object storage contains bytes; the catalog indexes identity, permissions and workflow state and lives in GCP Montréal next to the bytes. The OVH PostgreSQL holds only Airflow and MLflow metadata. The catalog store is an open decision: the BigQuery warehouse, a Canadian Cloud SQL instance, or a Canadian regional Firestore database replacing <code>nam5</code>. Airflow state does not constitute label approval. MLflow run IDs do not constitute dataset identity.</p>
 <h4 id="hybrid-43-human-roles">4.3 Human roles</h4>
 <p>Uploader can submit and inspect permitted submissions; annotator can edit draft labels; reviewer/approver can approve authorized revisions; data scientist can consume permitted releases and request experiments; platform administrator manages infrastructure. Separate approval from initial annotation for calibration and high-risk examples. Record any approved pilot role overlap. Test cross-project denial, not merely successful login.</p>
 <h3 id="hybrid-5-data-discovery-and-preparation-experiment">5. Data discovery and preparation experiment</h3>
@@ -462,7 +500,7 @@ body{margin:0!important;padding:0!important;max-width:none!important;background:
 <p>Do not collapse these into a single unexplained quality score.</p>
 <h4 id="hybrid-52-preparation-stages">5.2 Preparation stages</h4>
 <ol>
-<li><strong>Accession:</strong> inventory authorized source objects and metadata; import without modifying/deleting the GCP originals; verify SHA-256, source generation and destination version. Record fixtures and unreachable links as separate categories.</li>
+<li><strong>Accession:</strong> register authorized source objects in place; do not copy, modify or delete them. Verify each SHA-256 against its archive name and record landing and archive generations. Record fixtures and unreachable links as separate categories.</li>
 <li><strong>Safety validation:</strong> MIME sniffing, file integrity, malware checks, encrypted-file handling and bounded archive/PDF decoding. Unsupported or suspicious files remain quarantined with reasons.</li>
 <li><strong>Lightweight corpus profiling:</strong> deduplication, page count, language/layout indicators, embedded-text presence, invoice/attachment classification and provenance completeness. Classification predictions remain provisional.</li>
 <li><strong>Representative preparation sample:</strong> proposed initial working batch of up to 50 unique invoices, selected across available languages, scan quality, page count and vendor/layout families. This is a planning batch, not a statistical guarantee. Include difficult cases rather than selecting only clean text PDFs.</li>
@@ -470,7 +508,7 @@ body{margin:0!important;padding:0!important;max-width:none!important;background:
 <li><strong>Review calibration:</strong> proposed up to 20 documents independently reviewed by two people, then adjudicated. Record disagreements and correction time. Increase sampling where disagreement or coverage gaps remain. Do not extrapolate a deliberately difficult sample to the entire corpus without weighting by the measured strata.</li>
 <li><strong>Preparation decision:</strong> retain the least costly route that preserves required evidence and meets a documented, task-specific readability/labeling standard. Route difficult documents to manual repair, alternate preparation or exclusion with a reason; do not silently discard them.</li>
 </ol>
-<p>All initial parsing/OCR stays on approved Canadian compute. A cloud OCR API, model-assisted cleanup, or human annotation vendor requires a separate data-use decision. Generated text must not replace the original evidence.</p>
+<p>All initial parsing/OCR runs in GCP Montréal next to the data. A cloud OCR API, model-assisted cleanup, or human annotation vendor requires a separate data-use decision. Generated text must not replace the original evidence.</p>
 <h4 id="hybrid-53-invoice-schema-and-annotation-rules">5.3 Invoice schema and annotation rules</h4>
 <p>Version the extraction contract before mass annotation. Cover supplier/customer, invoice number, issue/due dates, currency, purchase-order references, subtotal, discounts, tax components, total, amount due, and repeatable line items (description, quantity, unit, price, tax and amount).</p>
 <p>Store raw source values separately from normalized values; money uses decimal strings with explicit currency. Distinguish absent, unreadable, ambiguous and not-applicable fields from empty strings. Preserve page/region or text-span evidence. Multiple invoices in one PDF receive explicit child identities without splitting related examples across dataset partitions.</p>
@@ -522,19 +560,19 @@ body{margin:0!important;padding:0!important;max-width:none!important;background:
 <p>Evaluate approved output JSON with schema validity, normalized field precision/recall or exact match as appropriate, amount/date/currency correctness, line-item alignment, missing/unsupported value rates, and source attribution. Report per-stratum results, sample sizes and uncertainty. Separately measure runtime, throughput, peak VRAM, failure rate and cost/document. Human or model-grader preference alone is not a substitute for field evidence.</p>
 <h3 id="hybrid-7-mlflow-airflow-and-yaml-responsibilities">7. MLflow, Airflow, and YAML responsibilities</h3>
 <h4 id="hybrid-71-mlflow-on-ovh">7.1 MLflow on OVH</h4>
-<p>Deploy after upload and provenance work, initially to record preparation comparisons and baseline evaluations; it need not wait for fine-tuning. Use SQL for metadata and OVH S3-compatible storage for artifacts, configured using the supported custom endpoint option. This deliberately selects the object-store alternative allowed by the HTML design rather than its server-local pilot placement.</p>
+<p>Deploy after upload and provenance work, initially to record preparation comparisons and baseline evaluations; it need not wait for fine-tuning. PostgreSQL holds the metadata. Artifacts live in a Montréal GCS bucket: Airflow creates each run, GCP jobs write artifacts directly to that run's artifact location, and the tracking server runs with <code>--no-serve-artifacts</code>, so it never proxies or stores artifact bytes. The server has no access to the artifact bucket: people open artifacts in GCS under their own IAM, and the MLflow UI artifact browser is not used in the pilot. Granting the server read access would let artifacts transit OVH, and adapters can memorize training data, so that requires an explicit decision.</p>
 <p>Record dataset release/hash, schema/preparation/config/code revisions, model/processor revision, trainer/container digest, run type, provider job IDs, resource recipe, measured metrics and artifact checksums. Model versions link adapters to the exact base and quantization recipe; an adapter is not a standalone checkpoint.</p>
-<p>Restrict the initial MLflow instance to one authorized research trust group. An authenticated artifact proxy may expose all artifacts reachable by its backing credentials to its users; experiment names are not a tested multi-tenant security boundary. Keep sensitive raw documents out of general run parameters/logs. Test artifact authorization, largest intended upload, interrupted transfer, timeout and restore before relying on it for checkpoints.</p>
+<p>Restrict the initial MLflow instance to one authorized research trust group. Experiment names are not a tested multi-tenant security boundary; artifact access is enforced by GCS IAM per bucket or prefix. Keep sensitive raw documents out of run parameters, tags and logs. Test artifact authorization, the largest intended upload, interrupted transfer, timeout and restore before relying on it for checkpoints.</p>
 <h4 id="hybrid-72-airflow-on-ovh">7.2 Airflow on OVH</h4>
-<p>Add after the manually exercised preparation/release contract is stable. Start with a capped LocalExecutor for lightweight coordination; do not parse documents or train on the scheduler. LocalExecutor uses scheduler-side processes, so concurrency must be bounded. Use separate SQL database/user and an operator-only UI.</p>
+<p>Add after the manually exercised preparation/release contract is stable. Start with a capped LocalExecutor for lightweight coordination; do not parse documents or train on the scheduler. LocalExecutor uses scheduler-side processes, so concurrency must be bounded. Use separate SQL database/user and an operator-only UI. Tasks call Google APIs with short-lived federated credentials (section 8) to submit Cloud Run or Batch jobs, poll their state and read completion manifests; they never read originals or prepared text.</p>
 <p>Versioned DAG responsibilities:</p>
 <ul>
 <li><code>invoice_profile</code>: select an authorized accession snapshot, request preparation work, collect manifests and publish a readiness report.</li>
 <li><code>dataset_release</code>: validate approved revisions, rights and split constraints, then publish a frozen release. Human approval is an external prerequisite, not an unattended DAG task.</li>
-<li><code>model_evaluate</code>: stage the selected evaluation inputs, execute the chosen recipe, validate outputs and publish metrics.</li>
-<li><code>model_finetune</code>: require an approved training release and qualified model recipe, stage train/validation only, run training, import checkpoints and evaluate a candidate under separate test access.</li>
+<li><code>model_evaluate</code>: select the evaluation inputs, execute the chosen recipe in GCP, validate outputs and publish metrics.</li>
+<li><code>model_finetune</code>: require an approved training release and qualified model recipe, grant the job only train/validation splits, run training in GCP, register checkpoints and evaluate a candidate under separate test access.</li>
 </ul>
-<p>Pass IDs and small manifests through task metadata/XCom, never document bytes or model weights. Default to one paid GPU job at a time. No automatic repeated paid training attempts in the pilot: failures preserve evidence and require an authorized decision to rerun/resume.</p>
+<p>Pass SHA-256 document IDs, release IDs and manifest URIs through task metadata/XCom, never document bytes, file names, extracted text, signed URLs or model weights. Default to one paid GPU job at a time. No automatic repeated paid training attempts in the pilot: failures preserve evidence and require an authorized decision to rerun/resume.</p>
 <h4 id="hybrid-73-version-controlled-yaml-job-contract">7.3 Version-controlled YAML job contract</h4>
 <p>YAML is configuration consumed by the reviewed launcher/DAG code. This table defines the intended contract; it is not a deployed parser or a Google Batch-native schema.</p>
 <div class="table-wrap" role="region" tabindex="0" aria-label="Hybrid deployment specification table"><table>
@@ -587,22 +625,59 @@ body{margin:0!important;padding:0!important;max-width:none!important;background:
 </tr>
 </tbody>
 </table></div>
-<p>Validate the contract and policy before staging or resource creation. Reject unknown fields, unapproved locations, unrestricted output destinations, unqualified resource recipes and inputs lacking approval. Resolve defaults once, store the resolved configuration with the run, and never reinterpret an old run under new defaults.</p>
-<h3 id="hybrid-8-gcp-gpu-execution-and-cross-cloud-exchange">8. GCP GPU execution and cross-cloud exchange</h3>
-<p>Use Google Cloud Batch as the first job runner: Airflow manages workflow dependencies; Batch provisions and runs the GCP resources. It is not Vertex AI batch prediction, a persistent serving platform, or the fine-tuning algorithm.</p>
+<p>Validate the contract and policy before job submission or resource creation. Reject unknown fields, unapproved locations, unrestricted output destinations, unqualified resource recipes and inputs lacking approval. Resolve defaults once, store the resolved configuration with the run, and never reinterpret an old run under new defaults.</p>
+<h3 id="hybrid-8-gcp-execution-and-cross-cloud-control">8. GCP execution and cross-cloud control</h3>
+<p>Use Google Cloud Batch for GPU jobs, and Cloud Run jobs or Batch for CPU preparation: Airflow manages workflow dependencies; GCP provisions and runs the resources next to the data. Batch is not Vertex AI batch prediction, a persistent serving platform, or the fine-tuning algorithm.</p>
 <p>Execution sequence:</p>
 <ol>
 <li>Operator selects an approved release and qualified recipe; the preflight checks permissions, region/zone, quota, capacity feasibility, price estimate, wall-time and output limits.</li>
-<li>Trusted OVH transfer worker stages only permitted splits to a regional Canadian GCS location. Verify content hashes and generations; training receives no test labels.</li>
-<li>Controlled import supplies pinned containers and model weights. Keep reusable weights in an authorized GCP cache; do not repeatedly stream the complete model across clouds for every run.</li>
-<li>Submit a Batch job under a dedicated service account. Keep submission identity separate from job runtime identity; do not use broadly privileged default credentials.</li>
-<li>Job reads assigned inputs, runs without OVH credentials, writes checkpoints/metrics and a completion manifest to its assigned output boundary.</li>
-<li>OVH importer validates output completeness, hashes and expected formats; then imports durable artifacts and publishes MLflow metadata.</li>
-<li>Mark the logical run complete only after artifacts are durably registered. Remove temporary staging/resources according to policy after verified import, including failed-job cleanup and retained diagnostics.</li>
+<li>Airflow creates the MLflow run and assigns its output prefix in the artifact bucket.</li>
+<li>Airflow submits the job under a dedicated runtime service account. The submitting identity is separate from the runtime identity and may attach only that runtime account.</li>
+<li>The job reads the release manifest and its permitted splits in place from GCS; training receives no test labels. Reusable model weights and pinned containers come from an authorized Canadian cache filled by a separate import job, not streamed per run.</li>
+<li>The job writes checkpoints, metrics and a completion manifest (files, sizes, SHA-256) to its assigned prefix. It never calls OVH.</li>
+<li>Airflow polls job state, validates the completion manifest, and logs metrics, parameters and artifact URIs to MLflow.</li>
+<li>Mark the logical run complete only after artifacts are verified and registered. Remove temporary resources according to policy, including failed-job cleanup and retained diagnostics.</li>
 </ol>
-<p>A job restart must not silently create a second paid logical run: persist provider job IDs and inspect existing state before resubmission. Never trust an unverified success marker alone. Avoid loading arbitrary pickle or executing model code during artifact import.</p>
-<p>Identity target: short-lived Google credentials through Workload Identity Federation with a validated issuer, audience and subject binding for the OVH orchestrator/transfer service. The actual issuer and trust configuration remain a deployment prerequisite, not an assumed capability of OVH. Do not substitute personal gcloud refresh tokens or copy keys from the chat into production configuration. GCP runtime uses attached workload identity and the minimum approved input/output permissions; isolate by bucket or tested conditional scope.</p>
-<p>Prefer private-IP GCP workers with explicitly configured access to required Google APIs/registry. No inbound access from GCP to OVH is required. Internet model downloads belong in the controlled import stage, not unrestricted training execution. If direct cross-cloud endpoints are used, TLS and identity enforcement are mandatory; an allowlisted domain alone is insufficient exfiltration control. Private connectivity is a later cost/security decision, not an unverified prerequisite or guarantee.</p>
+<p>A job restart must not silently create a second paid logical run: persist provider job IDs and inspect existing state before resubmission. Never trust an unverified success marker alone. Avoid loading arbitrary pickle or executing model code while validating artifacts.</p>
+<p><strong>Identity.</strong> OVH services obtain short-lived Google credentials through Workload Identity Federation. OVH VMs cannot natively prove their identity to Google, so use federation with X.509 certificates issued by a certificate authority we control, one client certificate per service. The pool, provider, attribute mapping and certificate rotation are deployment prerequisites, and the Security Token Service API must be enabled first. Do not use service-account keys, personal gcloud refresh tokens, or credentials pasted into chat.</p>
+<div class="table-wrap" role="region" tabindex="0" aria-label="Hybrid deployment specification table"><table>
+<thead>
+<tr>
+<th scope="col">Identity</th>
+<th scope="col">Allowed</th>
+<th scope="col">Denied</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Upload API</td>
+<td>Create objects in landing</td>
+<td>Read or delete landing objects; every other bucket</td>
+</tr>
+<tr>
+<td>Promotion job</td>
+<td>Read landing; create in the originals archive</td>
+<td>Overwrite or delete archived originals</td>
+</tr>
+<tr>
+<td>Preparation jobs</td>
+<td>Read originals; write prepared outputs</td>
+<td>Write originals or releases</td>
+</tr>
+<tr>
+<td>Training and evaluation jobs</td>
+<td>Read assigned release splits; write their own run prefix</td>
+<td>Read test labels during training; read other runs</td>
+</tr>
+<tr>
+<td>OVH coordinator (federated)</td>
+<td>Submit and inspect jobs; attach job runtime accounts; read release and completion manifests</td>
+<td>Read originals, prepared text or artifacts</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Network.</strong> Run job workers on private IPs with Private Google Access, no external IPs and no NAT, so a submitted job cannot pull arbitrary images or send data out. Jobs run only pinned image digests from a Montréal Artifact Registry repository the coordinator cannot write to. No inbound path from GCP to OVH is needed, and no private interconnect: only control-plane API calls cross clouds.</p>
+<p><strong>Transfer charges.</strong> Uploading into Google is free and same-region reads avoid transfer charges; reads from outside Google are billed as internet egress (about $0.12/GiB at low volume). Keep every document reader in GCP. GPU jobs in Toronto instead of Montréal add North American inter-region transfer (about $0.02/GiB) on the inputs they read.</p>
 <p>Quota does not equal hardware capacity. Confirm that the exact GPU/machine combination can be allocated in the selected Canadian zone before claiming availability. The architecture does not promise “any GPU” or one-H100 fit.</p>
 <h3 id="hybrid-9-qwen35-122b-a10b-qualification-gate">9. Qwen3.5-122B-A10B qualification gate</h3>
 <p>SFT with QLoRA remains the intended experiment, not an already validated recipe. Preserve text and images so the data lake does not lock the task into text-only training.</p>
@@ -619,14 +694,14 @@ body{margin:0!important;padding:0!important;max-width:none!important;background:
 <p>The earlier single-H100 CPU-offloaded inference smoke is not training-fit evidence. If the requested multimodal QLoRA path fails qualification, present the measured limitation and alternatives for an explicit decision; do not silently switch to text-only, a smaller model, or BF16 LoRA.</p>
 <h3 id="hybrid-10-security-compliance-recovery-and-spending-boundaries">10. Security, compliance, recovery, and spending boundaries</h3>
 <ul>
-<li>Issue dedicated, scoped deployment credentials and rotate/revoke superseded credentials before deploying shared services. Put new scoped credentials in the selected secret-management mechanism, not this document, Git, YAML values, container images or notebooks.</li>
-<li>Keep all document data, derivatives, catalog content, staging, artifacts and backups in selected Canadian services. Control-plane metadata and provider support access have separate residency implications that require review; a regional bucket is not proof that every operational datum stays in-country.</li>
-<li>Obtain OVH SOC 1 Type II and SOC 2 Type II reports for Public Cloud and Private Cloud separately; prioritize explicit Public Cloud BHS Object Storage/compute scope. A US SOC 3 report or Private Cloud report is not a substitute. Obtain applicable GCP reports/bridge letters and review service/regional scope. Pending provider evidence is a tracked risk, not a declaration of non-compliance or approval.</li>
+<li>Issue dedicated, scoped deployment credentials and rotate/revoke superseded credentials before deploying shared services. Put new scoped credentials in the selected secret-management mechanism, not this document, Git, YAML values, container images or notebooks. Google access from OVH uses federation only.</li>
+<li>Keep all document data, derivatives, catalog content, releases, artifacts and backups in GCP Montréal, or another approved Canadian GCP region where GPU capacity requires it. OVH Beauharnois holds coordination metadata only: job state, metrics, IDs and URIs. The review app's Firestore database in <code>nam5</code> is the known exception to fix. Control-plane metadata and provider support access have separate residency implications that require review; a regional bucket is not proof that every operational datum stays in-country.</li>
+<li>Obtain OVH SOC 1 Type II and SOC 2 Type II reports for Public Cloud and Private Cloud separately; prioritize explicit Public Cloud BHS compute scope, since OVH object storage is no longer used. A US SOC 3 report or Private Cloud report is not a substitute. Obtain applicable GCP reports/bridge letters and review service/regional scope for Cloud Storage, BigQuery, Cloud Run and Batch. Pending provider evidence is a tracked risk, not a declaration of non-compliance or approval.</li>
 <li>Synthetic/non-sensitive deployment checks can proceed while evidence is collected. Real client-document onboarding requires the responsible data/security owner to approve access, retention, use rights and any unresolved provider risk.</li>
-<li>Back up catalog/approval state, deployment configuration, and non-regenerable objects. Use separate backup credentials and a verified Canadian failure domain. Same-site versioning alone is neither independent backup nor geographic recovery.</li>
+<li>Back up the OVH PostgreSQL (Airflow and MLflow metadata), the catalog and deployment configuration with separate backup credentials to a verified Canadian failure domain. The originals archive is versioned and retention-protected but still a single bucket in one region; decide whether originals need a second Canadian copy. Same-site versioning alone is neither independent backup nor geographic recovery.</li>
 <li>Proposed controlled-pilot recovery targets: RPO up to 24 hours for metadata and RTO one business day, subject to owner acceptance and a successful restore exercise. Preserve or reconstruct acknowledged uploads through accession/object reconciliation; do not claim these targets as achieved.</li>
-<li>Bound retention for logs, traces, scratch, failed outputs and temporary staging. Do not log invoice text, credentials or presigned URLs by default. Deletion/withdrawal must account for releases, downstream copies and backups under the approved policy.</li>
-<li>Account separately for OVH CPU/block/object/backup costs, GCP GPU/CPU/disk/cache/staging, network transfer, software/support and human annotation. No unquoted Private Cloud commitment is required for this minimal architecture.</li>
+<li>Bound retention for logs, traces, scratch, failed outputs and temporary resources. Landing objects are deleted at 90 days only after their originals are archived; the evaluation copy expires at 120 days. Do not log invoice text, credentials or signed URLs by default. Deletion/withdrawal must account for releases, downstream copies, backups and the archive retention policy.</li>
+<li>Account separately for the OVH coordination VM, block storage and backup; GCS, BigQuery, Cloud Run/Batch CPU and GPU, and caches; network transfer; software/support; and human annotation. Cross-cloud traffic is control-plane calls and small manifests, not data. No unquoted Private Cloud commitment is required for this minimal architecture.</li>
 <li>Use runtime/task limits, admission authorization and concurrency caps for cost control. Billing alerts are delayed notifications, not guaranteed termination. Confirm teardown of chargeable resources after each qualification.</li>
 </ul>
 <p>The existing experiment notebook is not a durable platform host. Before stopping/deleting or repurposing it, verify its actual state and preserve any required artifacts; a stop request is not proof that billing has ended. Do not retain its GPU merely to run MLflow.</p>
@@ -642,28 +717,28 @@ body{margin:0!important;padding:0!important;max-width:none!important;background:
 <tbody>
 <tr>
 <td>0 — preflight</td>
-<td>Confirm project/account permissions, Canadian endpoints, DNS/SSO, credential rotation, allowed data use, deployment versions, backup destination, spend owner and provider evidence status</td>
+<td>Confirm project/account permissions, Canadian regions, DNS/SSO, scoped OVH credentials, allowed data use, ingestion sources, archive retention and lock decision, backup destination, spend owner and provider evidence status; enable the Security Token Service and Batch APIs</td>
 <td>Named owners and a recorded decision for each prerequisite; no production secret in artifacts</td>
 </tr>
 <tr>
-<td>1 — usable lake</td>
-<td>Provision private storage, catalog, authenticated upload/review surface and isolated preparation worker</td>
-<td>Authorized user uploads a representative invoice; checksum/original/preview/catalog agree; interrupted upload is not published; anonymous and cross-project access fail</td>
+<td>1 — lake hygiene</td>
+<td>Make landing → verify → archive automatic for every new upload (deploy the upload trigger or a scheduled promotion job), add the reconciliation report and least-privilege identities</td>
+<td>Every landing object has a verified archived original before its 90-day deletion; reconciliation reports zero unarchived landing objects; anonymous, cross-project and uploader-read access fail</td>
 </tr>
 <tr>
 <td>2 — readiness assessment</td>
-<td>Import approved GCP source corpus without deletion, reconcile identities/reviews, profile sources, compare preparation and calibrate reviewers</td>
-<td>Readiness report with actual counts/denominators, manual correction effort, provenance gaps, measured processing/storage needs and collection priorities</td>
+<td>Register the existing corpus in place, reconcile identities/reviews, profile sources, compare preparation and calibrate reviewers</td>
+<td>Readiness report with real counts/denominators, manual correction effort, provenance gaps, measured processing/storage needs and collection priorities</td>
 </tr>
 <tr>
 <td>3 — reproducible releases and tracking</td>
-<td>Version schema/configuration, publish approved dataset release, deploy MLflow</td>
-<td>Every included record traces to source and approval; no duplicate-family leakage; authorized scientist downloads exact release; MLflow records a real CPU preparation/baseline run and durable artifact</td>
+<td>Version schema/configuration, publish an approved release to the release bucket, deploy MLflow on OVH with the GCS artifact location</td>
+<td>Every included record traces to source and approval; no duplicate-family leakage; authorized scientist reads the exact release; MLflow records a real CPU preparation/baseline run whose artifacts are in GCS</td>
 </tr>
 <tr>
 <td>4 — orchestrated hybrid path</td>
-<td>Deploy bounded Airflow orchestration, workload federation, GCP staging and Batch integration</td>
-<td>First a CPU job proves real OVH-to-GCP input transfer, execution, output import, tracking and cleanup; denial/failure paths exercised; no GPU needed for this integration proof</td>
+<td>Deploy Airflow on OVH, Workload Identity Federation and Batch/Cloud Run job submission</td>
+<td>A CPU job submitted from OVH reads its release in place, writes outputs and a completion manifest, appears in MLflow and is cleaned up; the OVH identity cannot read an original; no document bytes reach OVH</td>
 </tr>
 <tr>
 <td>5 — GPU qualification</td>
@@ -683,17 +758,18 @@ body{margin:0!important;padding:0!important;max-width:none!important;background:
 <ol>
 <li>Upload, preview, correct, approve and export one multi-page invoice end to end, with source evidence and user identities preserved.</li>
 <li>Submit an identical file twice: deduplicate canonical bytes while retaining both authorized accession records; deny cross-client information leakage.</li>
-<li>Interrupt a multipart upload or parser: no partially prepared document or dataset release is published; the failure remains visible.</li>
+<li>Interrupt an upload or parser: no partially prepared document or dataset release is published; the failure remains visible.</li>
 <li>Upload a corrupt/encrypted/oversized document: quarantine or bounded rejection with a reason; no scheduler/SQL exhaustion.</li>
 <li>Change an approved label: existing release remains reproducible; a new approval/release is required for revised data.</li>
 <li>Attempt anonymous access, another project's object, an expired signed URL and a privileged operation as an uploader: all denied with appropriate audit evidence.</li>
 <li>Restore catalog and selected source/annotation/release objects into an isolated environment; verify hashes, permissions and source-to-label lineage.</li>
-<li>Execute a real CPU Batch canary across clouds: verify identical inputs/results, final MLflow artifact, job-state handling and removal of temporary resources.</li>
+<li>Run a real CPU job submitted from OVH: inputs read in place, identical results, MLflow metadata pointing to GCS artifacts, job-state handling and removal of temporary resources; the OVH identity's read of an original is denied.</li>
 <li>Terminate a training qualification job: preserve valid checkpoint/diagnostics, prevent duplicate automatic paid execution, and verify resource cleanup.</li>
 <li>Reload the saved adapter with the pinned base/processor and evaluate the frozen examples; distinguish serialization success from acceptable extraction quality.</li>
+<li>Leave a landing object unarchived until the reconciliation threshold: the reconciliation fails loudly well before the 90-day deletion.</li>
 </ol>
-<h3 id="hybrid-13-architecture-risks-and-unresolved-decisions">13. Architecture risks and unresolved decisions</h3>
-<p>Review lenses applied sequentially: system boundaries; security/compliance; data science; performance/capacity; recovery/operations; cost; maintainability. This is a proposal review, not an independent external audit or a provider-specific deployment approval.</p>
+<h3 id="hybrid-13-architecture-review-and-unresolved-decisions">13. Architecture review and unresolved decisions</h3>
+<p>Review lenses applied sequentially: system boundaries; security/compliance; data science; performance/capacity; recovery/operations; cost; maintainability. The architecture-review skill governs this proposal review; no Helm, Kubernetes or provider-specific implementation was performed. No independent external audit or subagent review is claimed. The 28 October 2026 revision re-applied the system-boundary, security, recovery and cost lenses after the storage audit.</p>
 <p>Challenge disposition: retained the data-provenance, credential, artifact-authorization and runtime-qualification risks because they have direct evidence or explicit unverified prerequisites. Merged source-link/duplicate/fixture problems into release integrity. Removed any inference that lack of SOC documents proves non-compliance, or that Canadian catalog availability proves GPU allocation. Downgraded sizing to planning assumptions. No critical deployed-system finding is asserted from this design exercise.</p>
 <div class="table-wrap" role="region" tabindex="0" aria-label="Hybrid deployment specification table"><table>
 <thead>
@@ -711,13 +787,18 @@ body{margin:0!important;padding:0!important;max-width:none!important;background:
 </tr>
 <tr>
 <td>High — identity/secrets</td>
-<td>Deployment credential rotation, federation and SSO bindings require verification</td>
-<td>Rotate before shared deployment; platform/security owner chooses issuer, access mapping and secret storage</td>
+<td>Federation and SSO bindings are not selected/verified</td>
+<td>Dedicated scoped credentials only; platform/security owner chooses the federation certificate authority, attribute mapping and secret storage</td>
+</tr>
+<tr>
+<td>High — originals retention</td>
+<td>The archive's 7-year policy is not locked; archived client originals cannot be deleted per object before 2033</td>
+<td>Data owner confirms retention against client agreements before anyone locks the policy</td>
 </tr>
 <tr>
 <td>High — artifact authorization</td>
-<td>MLflow documents shared backing-role access through its proxy</td>
-<td>One trust group initially; prove authorization or split instances/storage boundaries before adding mutually isolated clients</td>
+<td>The MLflow server has no artifact access; GCS IAM governs artifacts per bucket or prefix</td>
+<td>One trust group initially; prove prefix-level authorization before adding mutually isolated clients</td>
 </tr>
 <tr>
 <td>High — model runtime</td>
@@ -730,9 +811,14 @@ body{margin:0!important;padding:0!important;max-width:none!important;background:
 <td>Obtain applicable evidence or documented risk acceptance; no implicit compliance approval</td>
 </tr>
 <tr>
+<td>Medium — automatic archiving</td>
+<td>The upload trigger is not deployed; new uploads are neither processed nor archived automatically</td>
+<td>Phase 1 deploys promotion and reconciliation before new uploads are accepted</td>
+</tr>
+<tr>
 <td>Medium — recovery</td>
-<td>Pilot placement has single-host/single-region failure risks</td>
-<td>Accept non-HA pilot explicitly; select independent Canadian backup and prove restore before relying on the lake</td>
+<td>Single-VM coordination plane and single-region lake</td>
+<td>Accept non-HA pilot explicitly; back up PostgreSQL off the VM; decide on a second Canadian copy of originals</td>
 </tr>
 <tr>
 <td>Medium — capacity and cost</td>
@@ -741,8 +827,23 @@ body{margin:0!important;padding:0!important;max-width:none!important;background:
 </tr>
 <tr>
 <td>Medium — operational complexity</td>
-<td>Cross-cloud staging adds transfer/identity/failure handling</td>
-<td>Start with CPU end-to-end proof; keep canonical ownership on OVH and execution-specific copies on GCP</td>
+<td>Cross-cloud control adds federation, certificate rotation and API failure handling</td>
+<td>Start with a CPU end-to-end proof; keep data and execution in GCP so no cross-cloud data path exists</td>
+</tr>
+<tr>
+<td>Open — ingestion sources</td>
+<td>Client uploads, connectors to client systems and crawling are not chosen</td>
+<td>Each writes directly into landing; connector and crawler workers run in GCP</td>
+</tr>
+<tr>
+<td>Deferred — Firestore <code>nam5</code></td>
+<td>The review app's database is in a US multi-region; a Firestore location cannot be changed in place</td>
+<td>Separate change: new Canadian regional database, export/import, repoint the review app and its trigger</td>
+</tr>
+<tr>
+<td>Deferred — untracked bucket</td>
+<td>The evaluation copy is outside Terraform and deletes its corpus copy at 120 days</td>
+<td>Bring under Terraform or retire</td>
 </tr>
 </tbody>
 </table></div>
@@ -750,15 +851,16 @@ body{margin:0!important;padding:0!important;max-width:none!important;background:
 <h3 id="hybrid-14-references-and-evidence-boundaries">14. References and evidence boundaries</h3>
 <ul>
 <li><a href="https://munera-intelligence.github.io/munera-diligence-ml-infra-site/06-shared-infrastructure.html">Munera shared infrastructure baseline</a> — service roles, sizing caveats, isolation and recovery boundaries.</li>
-<li><a href="https://mlflow.org/docs/latest/self-hosting/architecture/artifact-store/">MLflow artifact stores</a> — SQL/artifact distinction, S3-compatible endpoints and shared artifact-role warning.</li>
+<li><a href="https://mlflow.org/docs/latest/self-hosting/architecture/artifact-store/">MLflow artifact stores</a> and <a href="https://mlflow.org/docs/latest/self-hosting/architecture/tracking-server">tracking server</a> — SQL/artifact distinction, direct artifact access with <code>--no-serve-artifacts</code>, shared artifact-role warning.</li>
 <li><a href="https://airflow.apache.org/docs/apache-airflow/stable/core-concepts/executor/local.html">Airflow LocalExecutor</a> — tasks run as scheduler-side processes; bound parallelism.</li>
 <li><a href="https://docs.cloud.google.com/batch/docs/get-started">Google Cloud Batch</a> — remote job execution, prerequisites and resource billing.</li>
-<li><a href="https://docs.ovhcloud.com/en/guides/storage-and-backup/object-storage/s3-s3-compliancy">OVH S3 compatibility</a> — supported capabilities must be checked against the deployed service.</li>
+<li><a href="https://docs.cloud.google.com/iam/docs/workload-identity-federation-with-x509-certificates">Workload Identity Federation with X.509 certificates</a> — short-lived Google credentials for workloads outside Google Cloud.</li>
+<li><a href="https://cloud.google.com/storage/docs/lifecycle">Cloud Storage lifecycle</a> and <a href="https://cloud.google.com/storage/docs/bucket-lock">bucket lock</a> — Delete actions on versioned buckets, retention policies and irreversible locking.</li>
 <li><a href="https://www.ovhcloud.com/en-ca/compliance/soc-1-2-3/">OVH SOC reports</a> — customer report access, not proof of the selected service scope.</li>
 <li><a href="https://cloud.google.com/security/compliance/soc-1">Google SOC 1</a>, <a href="https://cloud.google.com/security/compliance/soc-2">SOC 2</a>, <a href="https://cloud.google.com/security/compliance/compliance-reports-manager">Compliance Reports Manager</a> — obtain applicable restricted reports and bridge letters.</li>
 <li><a href="https://docs.axolotl.ai/docs/models/qwen3.5.html">Axolotl Qwen3.5</a>, <a href="https://docs.axolotl.ai/docs/expert_quantization.html">expert quantization</a>, <a href="https://unsloth.ai/docs/models/qwen3.5/fine-tune">Unsloth Qwen3.5 fine-tuning</a> — qualification inputs, not this project's measured training result.</li>
 </ul>
-<p>This work produces a specification only. No upload portal, MLflow/Airflow service, cloud bucket, Batch job, or GPU was provisioned while creating it. Deployment acceptance scenarios remain to be executed during implementation.</p>
+<p>This specification provisions nothing. The only cloud change made during the 28 October 2026 revision is the archive promotion recorded in section 1.2. No upload portal, MLflow/Airflow service, bucket, Batch job, or GPU was provisioned, and the acceptance scenarios remain to be executed during implementation.</p>
 </section>
 <footer>Design mapping, not deployment/security certification. No cloud resources or access policies changed. Some Vertex documentation URLs now redirect under Google's Gemini Enterprise Agent Platform naming; the custom-model and networking distinctions above remain explicit.</footer>
 <script id="planning-sections">
